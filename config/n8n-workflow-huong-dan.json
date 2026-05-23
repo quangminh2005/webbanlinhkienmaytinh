@@ -1,0 +1,36 @@
+{
+  "name": "PC Parts Shop - Tro ly khach hang",
+  "nodes": [
+    {
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pc-shop-chat",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "parameters": {
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "Ban la tro ly ban hang cua PC Parts Shop (linh kien may tinh Viet Nam). Nhiem vu: tu van san pham, khuyen mai, huong dan mua hang online (gio hang -> thanh toan -> don hang), Build PC. Tra loi ngan gon, than thien, tieng Viet. Hotline: 034 969 4556. Khong bia gia cu the neu khong co du lieu."
+        }
+      }
+    },
+    {
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"reply\": $json.output } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "AI Agent": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  }
+}
