@@ -81,3 +81,37 @@ Trong database:
 - Bang `users` co them cot `phone`, `address`; bang `orders` co them trang thai `returned`.
 - Neu ban da import schema cu, chay them: `database/alter_add_profile_and_returns.sql`.
 
+## 10. AI agent n8n lay du lieu website tren InfinityFree
+- InfinityFree khong cho remote MySQL, nen n8n khong ket noi truc tiep database.
+- Website cung cap API JSON: `/api/ai-context`.
+- PHP tren hosting doc MySQL local, n8n goi API nay qua HTTPS de lay danh muc, san pham, gia, ton kho va huong dan mua hang.
+- Doi `ai_context_token` trong `config/chat.php` truoc khi upload hosting.
+- Trong n8n, them HTTP Request node:
+  - Method: `GET`
+  - URL: gia tri `contextApiUrl` tu Webhook payload
+  - Header: `X-AI-Context-Token` = gia tri `contextApiToken` tu Webhook payload
+  - Query `q` = cau hoi khach, `limit` = 12
+
+## 11. Dang nhap bang Google
+- Neu database da co san, chay them: `database/alter_add_google_login.sql`.
+- Tao OAuth Client trong Google Cloud Console, lay `Client ID` va `Client Secret`.
+- Sua `config/google_oauth.php`:
+  - `enabled` => `true`
+  - `client_id` => Client ID
+  - `client_secret` => Client Secret
+- Authorized redirect URI can khai bao tren Google:
+  - Local: `http://localhost/Webbanlinhkienmaytinh/public/auth/google/callback`
+  - Hosting: `https://ten-mien-cua-ban/public/auth/google/callback`
+
+## 12. Dashboard & Analytics
+- Neu database da co san, chay them: `database/alter_add_analytics_columns.sql`.
+- Dashboard admin: `/admin/dashboard`.
+- Loi nhuan duoc tinh tu `gia ban - gia von`; gia von nhap tai trang quan ly san pham.
+- CSV import co them cot tuy chon `cost_price`.
+
+## 13. Trien khai Render
+- Project da co `Dockerfile` va `render.yaml` de tao PHP web service + MySQL private service.
+- Cau hinh production su dung environment variables; danh sach bien nam trong `.env.example`.
+- Apache tren Render tro thang vao thu muc `public`, vi vay URL khong can `/public`.
+- Huong dan day du: xem `RENDER_DEPLOY.md`.
+

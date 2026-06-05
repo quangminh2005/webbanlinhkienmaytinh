@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\Product;
+use App\Models\Promotion;
 
 class HomeController extends Controller
 {
@@ -16,6 +17,7 @@ class HomeController extends Controller
         $this->view('home/index', [
             'products' => $productModel->all($categoryId, $keyword),
             'categories' => $productModel->categories(),
+            'flashSales' => (new Promotion())->activeFlashSaleProducts(),
             'selectedCategory' => $categoryId,
             'searchQuery' => $keyword,
         ]);

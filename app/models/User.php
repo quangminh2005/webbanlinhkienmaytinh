@@ -28,6 +28,44 @@ class User
         return $user ?: null;
     }
 
+    public function findByGoogleId(string $googleId): ?array
+    {
+        $stmt = Database::connection()->prepare('SELECT * FROM users WHERE google_id = :google_id LIMIT 1');
+        $stmt->execute(['google_id' => $googleId]);
+        $user = $stmt->fetch();
+        return $user ?: null;
+    }
+
+    public function createFromGoogle(string $name, string $email, string $googleId): int
+    {
+        $stmt = Database::connection()->prepare(
+            'INSERT INTO users (name, email, password_hash, google_id, auth_provider, role)
+             VALUES (:name, :email, :password_hash, :google_id, :auth_provider, :role)'
+        );
+        $stmt->execute([
+            'name' => $name,
+            'email' => $email,
+            'password_hash' => password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT),
+            'google_id' => $googleId,
+            'auth_provider' => 'google',
+            'role' => 'customer',
+        ]);
+
+        return (int) Database::connection()->lastInsertId();
+    }
+
+    public function linkGoogleAccount(int $id, string $googleId): void
+    {
+        $stmt = Database::connection()->prepare(
+            'UPDATE users SET google_id = :google_id, auth_provider = :auth_provider WHERE id = :id'
+        );
+        $stmt->execute([
+            'id' => $id,
+            'google_id' => $googleId,
+            'auth_provider' => 'google',
+        ]);
+    }
+
     public function findById(int $id): ?array
     {
         $stmt = Database::connection()->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');

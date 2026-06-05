@@ -329,6 +329,17 @@
     box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
 }
 
+.pc-chat-msg a {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.pc-chat-msg--user a {
+    color: #bfdbfe;
+}
+
 .pc-chat-msg--user {
     align-self: flex-end;
     background: linear-gradient(135deg, #334155 0%, #0f172a 100%);

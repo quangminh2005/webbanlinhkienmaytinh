@@ -55,6 +55,7 @@ class AdminController extends Controller
             'category_id' => (int) $_POST['category_id'],
             'name' => trim($_POST['name']),
             'price' => (float) $_POST['price'],
+            'cost_price' => (float) ($_POST['cost_price'] ?? 0),
             'stock_quantity' => (int) $_POST['stock_quantity'],
             'description' => trim($_POST['description']),
             'image_url' => $imageUrl,
@@ -84,6 +85,7 @@ class AdminController extends Controller
             'category_id' => (int) $_POST['category_id'],
             'name' => trim($_POST['name']),
             'price' => (float) $_POST['price'],
+            'cost_price' => (float) ($_POST['cost_price'] ?? 0),
             'stock_quantity' => (int) $_POST['stock_quantity'],
             'description' => trim($_POST['description']),
             'image_url' => $finalImageUrl,
@@ -153,6 +155,7 @@ class AdminController extends Controller
             $categorySlug = $this->slugify((string) $this->csvValue($row, $headerMap, 'category_slug'));
             $categoryName = trim((string) $this->csvValue($row, $headerMap, 'category_name'));
             $price = (float) $this->csvValue($row, $headerMap, 'price');
+            $costPrice = (float) $this->csvValue($row, $headerMap, 'cost_price');
             $stock = (int) $this->csvValue($row, $headerMap, 'stock_quantity');
 
             if ($name === '' || $categorySlug === '') {
@@ -173,6 +176,7 @@ class AdminController extends Controller
                     'category_id' => $categoryId,
                     'name' => $name,
                     'price' => $price,
+                    'cost_price' => $costPrice,
                     'stock_quantity' => $stock,
                     'description' => trim((string) $this->csvValue($row, $headerMap, 'description')),
                     'image_url' => trim((string) $this->csvValue($row, $headerMap, 'image_url')),

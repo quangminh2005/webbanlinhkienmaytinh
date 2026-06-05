@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+
+php-server-err.log
+php-server-out.log
+
+public/uploads/*
+!public/uploads/.gitkeep

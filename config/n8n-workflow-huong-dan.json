@@ -11,12 +11,43 @@
       }
     },
     {
+      "name": "Lay du lieu website",
+      "type": "n8n-nodes-base.httpRequest",
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.contextApiUrl }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "limit",
+              "value": "12"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-AI-Context-Token",
+              "value": "={{ $json.contextApiToken }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "parameters": {
-        "text": "={{ $json.message }}",
+        "text": "=Cau hoi khach: {{ $('Webhook').item.json.message }}\n\nDu lieu website dang co:\n{{ JSON.stringify($json) }}",
         "options": {
-          "systemMessage": "Ban la tro ly ban hang cua PC Parts Shop (linh kien may tinh Viet Nam). Nhiem vu: tu van san pham, khuyen mai, huong dan mua hang online (gio hang -> thanh toan -> don hang), Build PC. Tra loi ngan gon, than thien, tieng Viet. Hotline: 034 969 4556. Khong bia gia cu the neu khong co du lieu."
+          "systemMessage": "Ban la tro ly ban hang cua PC Parts Shop (linh kien may tinh Viet Nam). Chi dung du lieu website duoc cung cap de tu van san pham, gia, ton kho, danh muc, cach dat hang, Build PC va hoan tra. Neu khong co du lieu phu hop, hay noi khach xem website hoac lien he hotline. Tra loi ngan gon, tieng Viet. Khong bia gia cu the neu khong co trong du lieu."
         }
       }
     },
@@ -30,7 +61,8 @@
     }
   ],
   "connections": {
-    "Webhook": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "Webhook": { "main": [[{ "node": "Lay du lieu website", "type": "main", "index": 0 }]] },
+    "Lay du lieu website": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
     "AI Agent": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
   }
 }

@@ -2,10 +2,19 @@
 
 declare(strict_types=1);
 
-session_start();
+date_default_timezone_set(getenv('APP_TIMEZONE') ?: 'Asia/Saigon');
 
 $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
 define('BASE_PATH', $scriptDir === '/' ? '' : rtrim($scriptDir, '/'));
+
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+if ($requestPath === BASE_PATH . '/healthz') {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+session_start();
 
 require __DIR__ . '/../app/core/helpers.php';
 

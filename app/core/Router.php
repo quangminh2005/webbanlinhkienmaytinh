@@ -35,6 +35,11 @@ class Router
             return;
         }
 
+        if ($path === '/cart/coupon' && $method === 'POST') {
+            (new \App\Controllers\CartController())->applyCoupon();
+            return;
+        }
+
         if ($path === '/checkout' && $method === 'GET') {
             (new \App\Controllers\CheckoutController())->form();
             return;
@@ -50,6 +55,11 @@ class Router
             return;
         }
 
+        if ($path === '/build-pc/add-to-cart' && $method === 'POST') {
+            (new \App\Controllers\BuilderController())->addToCart();
+            return;
+        }
+
         if ($path === '/auth/login' && $method === 'GET') {
             (new \App\Controllers\AuthController())->loginForm();
             return;
@@ -57,6 +67,16 @@ class Router
 
         if ($path === '/auth/login' && $method === 'POST') {
             (new \App\Controllers\AuthController())->login();
+            return;
+        }
+
+        if ($path === '/auth/google' && $method === 'GET') {
+            (new \App\Controllers\AuthController())->googleRedirect();
+            return;
+        }
+
+        if ($path === '/auth/google/callback' && $method === 'GET') {
+            (new \App\Controllers\AuthController())->googleCallback();
             return;
         }
 
@@ -87,6 +107,46 @@ class Router
 
         if ($path === '/admin/products' && $method === 'GET') {
             (new \App\Controllers\AdminController())->products();
+            return;
+        }
+
+        if ($path === '/admin/promotions' && $method === 'GET') {
+            (new \App\Controllers\AdminPromotionsController())->index();
+            return;
+        }
+
+        if ($path === '/admin/promotions/coupons/create' && $method === 'POST') {
+            (new \App\Controllers\AdminPromotionsController())->createCoupon();
+            return;
+        }
+
+        if ($path === '/admin/promotions/combos/create' && $method === 'POST') {
+            (new \App\Controllers\AdminPromotionsController())->createCombo();
+            return;
+        }
+
+        if ($path === '/admin/promotions/flash-sales/create' && $method === 'POST') {
+            (new \App\Controllers\AdminPromotionsController())->createFlashSale();
+            return;
+        }
+
+        if ($path === '/admin/promotions/delete' && $method === 'POST') {
+            (new \App\Controllers\AdminPromotionsController())->delete();
+            return;
+        }
+
+        if ($path === '/admin/dashboard' && $method === 'GET') {
+            (new \App\Controllers\AdminDashboardController())->index();
+            return;
+        }
+
+        if ($path === '/admin/ai-sync' && $method === 'GET') {
+            (new \App\Controllers\AdminAiSyncController())->index();
+            return;
+        }
+
+        if ($path === '/admin/ai-sync' && $method === 'POST') {
+            (new \App\Controllers\AdminAiSyncController())->sync();
             return;
         }
 
@@ -147,6 +207,16 @@ class Router
 
         if ($path === '/api/chat' && $method === 'POST') {
             (new \App\Controllers\ChatController())->send();
+            return;
+        }
+
+        if ($path === '/api/ai-context' && $method === 'GET') {
+            (new \App\Controllers\AiContextController())->show();
+            return;
+        }
+
+        if ($path === '/api/ai-documents' && $method === 'GET') {
+            (new \App\Controllers\AiDocumentsController())->index();
             return;
         }
 

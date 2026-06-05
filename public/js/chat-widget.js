@@ -51,6 +51,38 @@
         messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
+    function renderTextWithLinks(el, text) {
+        el.textContent = '';
+        var urlRegex = /(https?:\/\/[^\s<]+)/g;
+        var lastIndex = 0;
+        var match;
+
+        while ((match = urlRegex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                el.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+            }
+
+            var url = match[0].replace(/[),.]+$/, '');
+            var trailing = match[0].slice(url.length);
+            var a = document.createElement('a');
+            a.href = url;
+            a.textContent = url;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            el.appendChild(a);
+
+            if (trailing) {
+                el.appendChild(document.createTextNode(trailing));
+            }
+
+            lastIndex = match.index + match[0].length;
+        }
+
+        if (lastIndex < text.length) {
+            el.appendChild(document.createTextNode(text.slice(lastIndex)));
+        }
+    }
+
     function clearTypewriter() {
         if (typewriterTimer !== null) {
             clearTimeout(typewriterTimer);
@@ -63,7 +95,7 @@
         var div = document.createElement('div');
         div.className = 'pc-chat-msg pc-chat-msg--' + (role === 'user' ? 'user' : 'bot');
         div.setAttribute('role', 'article');
-        div.textContent = text;
+        renderTextWithLinks(div, text);
         messagesEl.appendChild(div);
         scrollToBottom();
         return div;
@@ -81,7 +113,7 @@
         scrollToBottom();
 
         if (prefersReducedMotion() || text.length > typewriterMax) {
-            div.textContent = text;
+            renderTextWithLinks(div, text);
             scrollToBottom();
             return div;
         }
@@ -99,6 +131,7 @@
                 typewriterTimer = window.setTimeout(tick, delay);
             } else {
                 typewriterTimer = null;
+                renderTextWithLinks(div, text);
             }
         }
         tick();
@@ -266,6 +299,17 @@
         if (e.key === 'Escape' && isOpen) {
             setOpen(false);
         }
+    });
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest('[data-pc-chat-product-question]');
+        if (!btn) {
+            return;
+        }
+
+        var productName = btn.getAttribute('data-product-name') || 'san pham nay';
+        setOpen(true);
+        sendMessage('Hay tu van cho toi ve san pham nay: ' + productName, 'product_detail');
     });
 
     renderQuickActions();

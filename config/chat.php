@@ -10,19 +10,25 @@
  * InfinityFree: giu webhook tren may chu N8N/cloud (khong dat URL trong JS).
  */
 return [
-    'enabled' => true,
+    'enabled' => filter_var(getenv('CHAT_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN),
 
     /** URL Webhook N8N (de trong = che do tra loi mau tren website, khong goi AI) */
-    'n8n_webhook_url' => 'https://9jqdl060.rpcld.net/webhook-test/113f864d-6d19-480f-af9b-7ea1fc79f0c7',
+    'n8n_webhook_url' => getenv('N8N_WEBHOOK_URL') ?: 'https://9jqdl060.rpcld.net/webhook/113f864d-6d19-480f-af9b-7ea1fc79f0c7',
+
+    /** URL Webhook N8N nhan du lieu sync RAG tu website. Dung Production URL khi workflow da publish. */
+    'rag_sync_webhook_url' => getenv('RAG_SYNC_WEBHOOK_URL') ?: 'https://9jqdl060.rpcld.net/webhook/pc-shop-rag-sync',
+
+    /** Token rieng de N8N goi /api/ai-context va /api/ai-documents. Nen doi thanh chuoi dai, kho doan khi upload hosting. */
+    'ai_context_token' => getenv('AI_CONTEXT_TOKEN') ?: 'doi-token-nay-tren-hosting',
 
     /** Timeout goi N8N (giay). InfinityFree thuong gioi ~30s */
-    'timeout_seconds' => 25,
+    'timeout_seconds' => (int) (getenv('CHAT_TIMEOUT_SECONDS') ?: 25),
 
     'shop' => [
-        'name' => 'PC Parts Shop',
-        'hotline' => '034 969 4556',
-        'hours' => '8:00 — 21:00',
-        'email' => 'quangminhngo41@gmail.com',
+        'name' => getenv('SHOP_NAME') ?: 'PC Parts Shop',
+        'hotline' => getenv('SHOP_HOTLINE') ?: '034 969 4556',
+        'hours' => getenv('SHOP_HOURS') ?: '8:00 — 21:00',
+        'email' => getenv('SHOP_EMAIL') ?: 'quangminhngo41@gmail.com',
     ],
 
     /** Gợi ý nhanh hiển thị trong cửa sổ chat */

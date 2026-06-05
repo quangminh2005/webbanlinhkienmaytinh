@@ -14,6 +14,22 @@ $bannerLeftUrl = bannerquangcao_side_image(true);
 $bannerRightUrl = bannerquangcao_side_image(false);
 $cartSession = $_SESSION['cart'] ?? [];
 $cartItemCount = is_array($cartSession) ? array_sum(array_map('intval', $cartSession)) : 0;
+$memberTier = null;
+$memberTierClass = 'member-tier--normal';
+$memberTierLabel = '';
+if (!empty($_SESSION['user']['id'])) {
+    $memberTier = (new \App\Models\Promotion())->membershipTier((int) $_SESSION['user']['id']);
+    $memberTierClass = [
+        'Bac' => 'member-tier--silver',
+        'Vang' => 'member-tier--gold',
+        'Kim Cuong' => 'member-tier--diamond',
+    ][(string) ($memberTier['name'] ?? '')] ?? 'member-tier--normal';
+    $memberTierLabel = (string) ($memberTier['name'] ?? '');
+    if (!in_array($memberTierLabel, ['Bac', 'Vang', 'Kim Cuong'], true)) {
+        $memberTier = null;
+        $memberTierLabel = '';
+    }
+}
 ?>
 
 <header class="site-header">
@@ -73,7 +89,10 @@ $cartItemCount = is_array($cartSession) ? array_sum(array_map('intval', $cartSes
                                     Admin
                                 </a>
                                 <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><a class="dropdown-item" href="<?= app_url('/admin/dashboard') ?>">Dashboard</a></li>
                                     <li><a class="dropdown-item" href="<?= app_url('/admin/products') ?>">Quan ly san pham</a></li>
+                                    <li><a class="dropdown-item" href="<?= app_url('/admin/promotions') ?>">CRM & Khuyen mai</a></li>
+                                    <li><a class="dropdown-item" href="<?= app_url('/admin/ai-sync') ?>">Dong bo AI/RAG</a></li>
                                     <li><a class="dropdown-item" href="<?= app_url('/admin/orders') ?>">Quan ly don hang</a></li>
                                 </ul>
                             </div>
@@ -81,7 +100,15 @@ $cartItemCount = is_array($cartSession) ? array_sum(array_map('intval', $cartSes
 
                         <div class="nav-item dropdown">
                             <a class="nav-link dropdown-toggle site-user-link" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <?= htmlspecialchars($_SESSION['user']['name']) ?>
+                                <span><?= htmlspecialchars($_SESSION['user']['name']) ?></span>
+                                <?php if ($memberTier): ?>
+                                    <span
+                                        class="member-tier-badge <?= htmlspecialchars($memberTierClass) ?>"
+                                        title="Hang thanh vien: <?= htmlspecialchars((string) $memberTier['name']) ?>"
+                                    >
+                                        <?= htmlspecialchars($memberTierLabel) ?>
+                                    </span>
+                                <?php endif; ?>
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="<?= app_url('/orders') ?>">Don hang cua toi</a></li>

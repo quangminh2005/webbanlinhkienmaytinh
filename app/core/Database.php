@@ -29,6 +29,11 @@ class Database
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             ]);
+            if (!empty($config['timezone'])) {
+                self::$instance->prepare('SET time_zone = :timezone')->execute([
+                    'timezone' => $config['timezone'],
+                ]);
+            }
         } catch (PDOException $e) {
             die('Database connection failed: ' . $e->getMessage());
         }

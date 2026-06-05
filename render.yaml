@@ -1,0 +1,81 @@
+services:
+  - type: web
+    name: pc-parts-shop
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_TIMEZONE
+        value: Asia/Saigon
+      - key: DB_HOST
+        fromService:
+          type: pserv
+          name: pc-parts-mysql
+          property: host
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        value: pc_shop
+      - key: DB_USER
+        value: pc_shop_user
+      - key: DB_PASSWORD
+        fromService:
+          type: pserv
+          name: pc-parts-mysql
+          envVarKey: MYSQL_PASSWORD
+      - key: DB_CHARSET
+        value: utf8mb4
+      - key: DB_TIMEZONE
+        value: "+07:00"
+      - key: CHAT_ENABLED
+        value: "true"
+      - key: N8N_WEBHOOK_URL
+        sync: false
+      - key: RAG_SYNC_WEBHOOK_URL
+        sync: false
+      - key: AI_CONTEXT_TOKEN
+        sync: false
+      - key: CHAT_TIMEOUT_SECONDS
+        value: "25"
+      - key: GOOGLE_OAUTH_ENABLED
+        value: "false"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SHOP_NAME
+        value: PC Parts Shop
+      - key: SHOP_HOTLINE
+        value: "034 969 4556"
+      - key: SHOP_HOURS
+        value: "8:00 - 21:00"
+      - key: SHOP_EMAIL
+        value: quangminhngo41@gmail.com
+    disk:
+      name: product-uploads
+      mountPath: /var/www/html/public/uploads
+      sizeGB: 1
+
+  - type: pserv
+    name: pc-parts-mysql
+    runtime: docker
+    dockerfilePath: ./docker/mysql/Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: MYSQL_DATABASE
+        value: pc_shop
+      - key: MYSQL_USER
+        value: pc_shop_user
+      - key: MYSQL_PASSWORD
+        generateValue: true
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+      - key: TZ
+        value: Asia/Ho_Chi_Minh
+    disk:
+      name: mysql-data
+      mountPath: /var/lib/mysql
+      sizeGB: 10

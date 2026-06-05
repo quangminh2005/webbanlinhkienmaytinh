@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(120) NOT NULL,
     email VARCHAR(180) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    google_id VARCHAR(80) DEFAULT NULL UNIQUE,
+    auth_provider VARCHAR(30) NOT NULL DEFAULT 'local',
     phone VARCHAR(30) DEFAULT NULL,
     address TEXT,
     role ENUM('customer', 'admin', 'staff') NOT NULL DEFAULT 'customer',
@@ -23,6 +25,7 @@ CREATE TABLE IF NOT EXISTS products (
     category_id INT NOT NULL,
     name VARCHAR(180) NOT NULL,
     price DECIMAL(12,2) NOT NULL DEFAULT 0,
+    cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     stock_quantity INT NOT NULL DEFAULT 0,
     description TEXT,
     image_url VARCHAR(255) DEFAULT NULL,
@@ -37,7 +40,10 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS orders (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
+    subtotal_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
     total_amount DECIMAL(12,2) NOT NULL,
+    discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    coupon_code VARCHAR(50) DEFAULT NULL,
     status ENUM('pending', 'processing', 'shipping', 'completed', 'cancelled', 'returned') DEFAULT 'pending',
     shipping_address TEXT,
     payment_method VARCHAR(50) DEFAULT NULL,
@@ -52,6 +58,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     product_id INT NOT NULL,
     quantity INT NOT NULL,
     unit_price DECIMAL(12,2) NOT NULL,
+    unit_cost_price DECIMAL(12,2) NOT NULL DEFAULT 0,
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
@@ -67,6 +74,42 @@ CREATE TABLE IF NOT EXISTS reviews (
     UNIQUE KEY uniq_review_order_product (order_id, product_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+);
+
+CREATE TABLE IF NOT EXISTS coupons (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(50) NOT NULL UNIQUE,
+    discount_type ENUM('percent', 'fixed') NOT NULL DEFAULT 'percent',
+    discount_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+    min_order_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    starts_at DATETIME DEFAULT NULL,
+    ends_at DATETIME DEFAULT NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS combo_promotions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(160) NOT NULL,
+    category_a_id INT NOT NULL,
+    category_b_id INT NOT NULL,
+    discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_a_id) REFERENCES categories(id),
+    FOREIGN KEY (category_b_id) REFERENCES categories(id)
+);
+
+CREATE TABLE IF NOT EXISTS flash_sales (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    discount_type ENUM('percent', 'fixed') NOT NULL DEFAULT 'percent',
+    discount_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+    starts_at DATETIME DEFAULT NULL,
+    ends_at DATETIME DEFAULT NULL,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (product_id) REFERENCES products(id)
 );
 

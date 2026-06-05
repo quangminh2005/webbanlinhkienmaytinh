@@ -1,4 +1,7 @@
 <h1 class="h3 mb-3">Admin - Quan ly san pham</h1>
+<p class="text-muted small">
+    Khi tang ton kho, nhap gia von cua lo hang moi; he thong se tu tinh gia von binh quan.
+</p>
 
 <div class="card mb-4">
     <div class="card-body">
@@ -43,9 +46,12 @@
                 <input class="form-control" name="price" type="number" step="0.01" placeholder="Gia" required>
             </div>
             <div class="col-md-2">
+                <input class="form-control" name="cost_price" type="number" step="0.01" placeholder="Gia von">
+            </div>
+            <div class="col-md-2">
                 <input class="form-control" name="stock_quantity" type="number" placeholder="Ton kho" required>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-2">
                 <select class="form-select" name="category_id" required>
                     <?php foreach ($categories as $category): ?>
                         <option value="<?= $category['id'] ?>"><?= htmlspecialchars($category['name']) ?></option>
@@ -85,7 +91,7 @@
         <h2 class="h5">Import san pham tu CSV</h2>
         <p class="text-muted small mb-2">
             Cot bat buoc: <code>name</code>, <code>category_slug</code>, <code>price</code>, <code>stock_quantity</code>.
-            Cot tuy chon: <code>category_name</code>, <code>description</code>, <code>image_url</code>, <code>socket</code>,
+            Cot tuy chon: <code>category_name</code>, <code>cost_price</code>, <code>description</code>, <code>image_url</code>, <code>socket</code>,
             <code>ram_type</code>, <code>vram_gb</code>, <code>wattage</code>.
         </p>
         <form method="post" action="<?= app_url('/admin/products/import') ?>" enctype="multipart/form-data" class="row g-2">
@@ -106,6 +112,7 @@
             <th>ID</th>
             <th>Ten</th>
             <th>Gia</th>
+            <th>Gia von</th>
             <th>Ton</th>
             <th>Danh muc</th>
             <th>Anh</th>
@@ -116,7 +123,7 @@
         <tbody>
         <?php if (empty($products)): ?>
             <tr>
-                <td colspan="8" class="text-center text-muted">Khong co du lieu.</td>
+                <td colspan="9" class="text-center text-muted">Khong co du lieu.</td>
             </tr>
         <?php endif; ?>
         <?php foreach ($products as $product): ?>
@@ -128,6 +135,9 @@
                 </td>
                 <td>
                     <input form="update-<?= $product['id'] ?>" class="form-control form-control-sm" type="number" step="0.01" name="price" value="<?= (float) $product['price'] ?>" required>
+                </td>
+                <td>
+                    <input form="update-<?= $product['id'] ?>" class="form-control form-control-sm" type="number" step="0.01" name="cost_price" value="<?= (float) ($product['cost_price'] ?? 0) ?>">
                 </td>
                 <td>
                     <input form="update-<?= $product['id'] ?>" class="form-control form-control-sm" type="number" name="stock_quantity" value="<?= (int) $product['stock_quantity'] ?>" required>

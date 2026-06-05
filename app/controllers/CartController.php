@@ -3,28 +3,20 @@
 namespace App\Controllers;
 
 use App\Core\Controller;
-use App\Models\Product;
+use App\Models\Promotion;
 
 class CartController extends Controller
 {
     public function index(): void
     {
         $cart = $_SESSION['cart'] ?? [];
-        $items = [];
-        $total = 0;
-        $productModel = new Product();
+        $userId = isset($_SESSION['user']['id']) ? (int) $_SESSION['user']['id'] : null;
+        $pricing = (new Promotion())->calculateCart($cart, $userId, (string) ($_SESSION['coupon_code'] ?? ''));
 
-        foreach ($cart as $productId => $qty) {
-            $product = $productModel->find((int) $productId);
-            if (!$product) {
-                continue;
-            }
-            $lineTotal = $product['price'] * $qty;
-            $total += $lineTotal;
-            $items[] = ['product' => $product, 'qty' => $qty, 'line_total' => $lineTotal];
-        }
-
-        $this->view('cart/index', ['items' => $items, 'total' => $total]);
+        $this->view('cart/index', [
+            'items' => $pricing['items'],
+            'pricing' => $pricing,
+        ]);
     }
 
     public function add(): void
@@ -35,6 +27,18 @@ class CartController extends Controller
                 $_SESSION['cart'][$productId] = 0;
             }
             $_SESSION['cart'][$productId]++;
+        }
+
+        $this->redirect('/cart');
+    }
+
+    public function applyCoupon(): void
+    {
+        $code = strtoupper(trim((string) ($_POST['coupon_code'] ?? '')));
+        if ($code === '') {
+            unset($_SESSION['coupon_code']);
+        } else {
+            $_SESSION['coupon_code'] = $code;
         }
 
         $this->redirect('/cart');

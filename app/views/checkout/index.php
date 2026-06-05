@@ -44,8 +44,14 @@
         </div>
 
         <div class="text-end">
-            <div class="text-muted">Tong</div>
-            <div class="fs-5 text-danger fw-bold"><?= number_format((float) $total) ?> VND</div>
+            <div class="text-muted">Tam tinh</div>
+            <div><?= number_format((float) $pricing['subtotal']) ?> VND</div>
+            <?php foreach ($pricing['discounts'] as $discount): ?>
+                <div class="text-success"><?= htmlspecialchars($discount['label']) ?>: -<?= number_format((float) $discount['amount']) ?> VND</div>
+            <?php endforeach; ?>
+            <div class="small text-muted">Hang thanh vien: <?= htmlspecialchars((string) $pricing['tier']['name']) ?></div>
+            <div class="text-muted mt-2">Tong</div>
+            <div class="fs-5 text-danger fw-bold"><?= number_format((float) $pricing['total']) ?> VND</div>
         </div>
     </div>
 </div>

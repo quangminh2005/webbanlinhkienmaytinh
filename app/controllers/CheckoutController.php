@@ -4,7 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\Order;
-use App\Models\Product;
+use App\Models\Promotion;
 
 class CheckoutController extends Controller
 {
@@ -23,24 +23,8 @@ class CheckoutController extends Controller
         $user = $this->ensureLogin();
 
         $cart = $_SESSION['cart'] ?? [];
-        $items = [];
-        $total = 0.0;
-        $productModel = new Product();
-
-        foreach ($cart as $productId => $qty) {
-            $product = $productModel->find((int) $productId);
-            if (!$product) {
-                continue;
-            }
-            $qty = (int) $qty;
-            if ($qty <= 0) {
-                continue;
-            }
-
-            $lineTotal = ((float) $product['price']) * $qty;
-            $total += $lineTotal;
-            $items[] = ['product' => $product, 'qty' => $qty, 'line_total' => $lineTotal];
-        }
+        $pricing = (new Promotion())->calculateCart($cart, (int) $user['id'], (string) ($_SESSION['coupon_code'] ?? ''));
+        $items = $pricing['items'];
 
         if (empty($items)) {
             $_SESSION['error'] = 'Gio hang trong.';
@@ -49,7 +33,7 @@ class CheckoutController extends Controller
 
         $this->view('checkout/index', [
             'items' => $items,
-            'total' => $total,
+            'pricing' => $pricing,
             'user' => $user,
         ]);
     }
@@ -69,9 +53,11 @@ class CheckoutController extends Controller
 
         try {
             $orderModel = new Order();
-            $orderId = $orderModel->createFromCart((int) $user['id'], $cart, $shippingAddress, $paymentMethod);
+            $pricing = (new Promotion())->calculateCart($cart, (int) $user['id'], (string) ($_SESSION['coupon_code'] ?? ''));
+            $orderId = $orderModel->createFromCart((int) $user['id'], $cart, $shippingAddress, $paymentMethod, $pricing);
 
             unset($_SESSION['cart']);
+            unset($_SESSION['coupon_code']);
 
             $order = $orderModel->findByIdForUser($orderId, (int) $user['id']);
             if (!$order) {

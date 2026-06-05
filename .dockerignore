@@ -1,0 +1,8 @@
+.git
+.gitignore
+.env
+.env.*
+account_admin.docx
+php-server-err.log
+php-server-out.log
+public/uploads/*

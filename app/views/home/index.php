@@ -1,6 +1,10 @@
 <?php
 
 $heroSlides = hero_slider_image_urls();
+$flashSaleByProductId = [];
+foreach (($flashSales ?? []) as $flashSaleItem) {
+    $flashSaleByProductId[(int) $flashSaleItem['product_id']] = $flashSaleItem;
+}
 
 ?>
 
@@ -71,6 +75,56 @@ $heroSlides = hero_slider_image_urls();
 
 </div>
 
+<?php if (!empty($flashSales)): ?>
+    <section class="mb-4">
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+            <div>
+                <h1 class="h3 mb-1">Flash Sale</h1>
+                <div class="text-muted small">San pham dang giam gia trong thoi gian gioi han</div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <?php foreach ($flashSales as $sale): ?>
+                <?php $inStock = (int) ($sale['stock_quantity'] ?? 0) > 0; ?>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card product-card h-100 border-danger">
+                        <?php if (!empty($sale['image_url'])): ?>
+                            <img
+                                src="<?= htmlspecialchars(product_image_url((string) $sale['image_url'])) ?>"
+                                alt="<?= htmlspecialchars($sale['product_name']) ?>"
+                                class="card-img-top"
+                                style="height: 150px; object-fit: cover;"
+                            >
+                        <?php endif; ?>
+                        <div class="card-body">
+                            <div class="badge text-bg-danger mb-2">
+                                <?php if ($sale['discount_type'] === 'percent'): ?>
+                                    -<?= number_format((float) $sale['discount_value']) ?>%
+                                <?php else: ?>
+                                    -<?= number_format((float) $sale['discount_value']) ?> VND
+                                <?php endif; ?>
+                            </div>
+                            <h2 class="h6"><?= htmlspecialchars($sale['product_name']) ?></h2>
+                            <div class="text-muted small mb-2"><?= htmlspecialchars($sale['category_name']) ?></div>
+                            <div class="small text-muted text-decoration-line-through"><?= number_format((float) $sale['original_price']) ?> VND</div>
+                            <div class="fw-bold text-danger mb-2"><?= number_format((float) $sale['sale_price']) ?> VND</div>
+                            <?php if (!empty($sale['ends_at'])): ?>
+                                <div class="small text-muted mb-2">Ket thuc: <?= htmlspecialchars((string) $sale['ends_at']) ?></div>
+                            <?php endif; ?>
+                            <a class="btn btn-outline-secondary btn-sm" href="<?= app_url('/product') ?>?id=<?= (int) $sale['product_id'] ?>">Chi tiet</a>
+                            <form class="d-inline" method="post" action="<?= app_url('/cart/add') ?>">
+                                <input type="hidden" name="product_id" value="<?= (int) $sale['product_id'] ?>">
+                                <button class="btn btn-danger btn-sm" <?= $inStock ? '' : 'disabled' ?>>Them gio</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </section>
+<?php endif; ?>
+
 <h1 class="h3 mb-3">Danh sách sản phẩm</h1>
 
 <form class="row g-2 mb-4 align-items-end" method="get" action="<?= app_url('/') ?>">
@@ -106,6 +160,8 @@ $heroSlides = hero_slider_image_urls();
 
 <div class="row g-3">
     <?php foreach ($products as $product): ?>
+        <?php $inStock = (int) ($product['stock_quantity'] ?? 0) > 0; ?>
+        <?php $productFlashSale = $flashSaleByProductId[(int) $product['id']] ?? null; ?>
         <div class="col-md-4">
             <div class="card product-card h-100">
                 <?php if (!empty($product['image_url'])): ?>
@@ -119,12 +175,34 @@ $heroSlides = hero_slider_image_urls();
                 <div class="card-body">
                     <h2 class="h6"><?= htmlspecialchars($product['name']) ?></h2>
                     <div class="text-muted small mb-2"><?= htmlspecialchars($product['category_name']) ?></div>
-                    <div class="fw-bold text-danger mb-2"><?= number_format((float) $product['price']) ?> VND</div>
+                    <div class="mb-2">
+                        <?php if ($inStock): ?>
+                            <span class="badge text-bg-success">Con hang</span>
+                        <?php else: ?>
+                            <span class="badge text-bg-danger">Het hang</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($productFlashSale): ?>
+                        <div class="mb-2">
+                            <span class="badge text-bg-danger">
+                                Flash Sale
+                                <?php if ($productFlashSale['discount_type'] === 'percent'): ?>
+                                    -<?= number_format((float) $productFlashSale['discount_value']) ?>%
+                                <?php else: ?>
+                                    -<?= number_format((float) $productFlashSale['discount_value']) ?> VND
+                                <?php endif; ?>
+                            </span>
+                        </div>
+                        <div class="small text-muted text-decoration-line-through"><?= number_format((float) $productFlashSale['original_price']) ?> VND</div>
+                        <div class="fw-bold text-danger mb-2"><?= number_format((float) $productFlashSale['sale_price']) ?> VND</div>
+                    <?php else: ?>
+                        <div class="fw-bold text-danger mb-2"><?= number_format((float) $product['price']) ?> VND</div>
+                    <?php endif; ?>
                     <p class="small mb-3"><?= htmlspecialchars(mb_strimwidth($product['description'], 0, 120, '...')) ?></p>
                     <a class="btn btn-outline-secondary btn-sm" href="<?= app_url('/product') ?>?id=<?= $product['id'] ?>">Chi tiet</a>
                     <form class="d-inline" method="post" action="<?= app_url('/cart/add') ?>">
                         <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
-                        <button class="btn btn-primary btn-sm">Them gio</button>
+                        <button class="btn btn-primary btn-sm" <?= $inStock ? '' : 'disabled' ?>>Them gio</button>
                     </form>
                 </div>
             </div>

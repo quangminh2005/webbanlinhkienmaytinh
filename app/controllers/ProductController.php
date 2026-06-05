@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\Product;
+use App\Models\Promotion;
 
 class ProductController extends Controller
 {
@@ -18,7 +19,12 @@ class ProductController extends Controller
             return;
         }
 
-        $this->view('product/show', ['product' => $product]);
+        $flashSale = (new Promotion())->activeFlashSaleForProductDetail((int) $product['id'], (float) $product['price']);
+
+        $this->view('product/show', [
+            'product' => $product,
+            'flashSale' => $flashSale,
+        ]);
     }
 }
 

@@ -7,7 +7,7 @@ use Exception;
 
 class Order
 {
-    public function createFromCart(int $userId, array $cart, string $shippingAddress, string $paymentMethod): int
+    public function createFromCart(int $userId, array $cart, string $shippingAddress, string $paymentMethod, ?array $pricing = null): int
     {
         $db = Database::connection();
         $productModel = new Product();
@@ -23,44 +23,78 @@ class Order
         }
 
         $items = [];
-        $total = 0.0;
+        $subtotal = 0.0;
 
         // Tinh tong va lay gia/so luong hien tai
-        foreach ($cart as $productId => $qty) {
-            $productId = (int) $productId;
-            $qty = (int) $qty;
-            if ($productId <= 0 || $qty <= 0) {
-                continue;
+        if ($pricing && !empty($pricing['items'])) {
+            foreach ($pricing['items'] as $item) {
+                $items[] = [
+                    'product' => $item['product'],
+                    'qty' => (int) $item['qty'],
+                    'unit_price' => (float) $item['unit_price'],
+                ];
+                $subtotal += (float) $item['line_total'];
             }
+        } else {
+            foreach ($cart as $productId => $qty) {
+                $productId = (int) $productId;
+                $qty = (int) $qty;
+                if ($productId <= 0 || $qty <= 0) {
+                    continue;
+                }
 
-            $product = $productModel->find($productId);
-            if (!$product) {
-                continue;
+                $product = $productModel->find($productId);
+                if (!$product) {
+                    continue;
+                }
+
+                $items[] = ['product' => $product, 'qty' => $qty, 'unit_price' => (float) $product['price']];
+                $subtotal += ((float) $product['price']) * $qty;
             }
-
-            $items[] = ['product' => $product, 'qty' => $qty];
-            $total += ((float) $product['price']) * $qty;
         }
 
         if (empty($items)) {
             throw new Exception('Gio hang trong.');
         }
 
+        $discountAmount = $pricing ? (float) ($pricing['discount_total'] ?? 0) : 0.0;
+        $total = $pricing ? (float) ($pricing['total'] ?? max(0, $subtotal - $discountAmount)) : $subtotal;
+        $couponCode = $pricing ? (string) ($pricing['coupon_code'] ?? '') : '';
+
         $db->beginTransaction();
         try {
-            $stmt = $db->prepare(
-                'INSERT INTO orders (user_id, total_amount, status, shipping_address, payment_method, payment_status)
-                 VALUES (:user_id, :total_amount, :status, :shipping_address, :payment_method, :payment_status)'
-            );
+            if ($this->ordersColumnExists('subtotal_amount')) {
+                $stmt = $db->prepare(
+                    'INSERT INTO orders (user_id, subtotal_amount, total_amount, discount_amount, coupon_code, status, shipping_address, payment_method, payment_status)
+                     VALUES (:user_id, :subtotal_amount, :total_amount, :discount_amount, :coupon_code, :status, :shipping_address, :payment_method, :payment_status)'
+                );
 
-            $stmt->execute([
-                'user_id' => $userId,
-                'total_amount' => $total,
-                'status' => 'pending',
-                'shipping_address' => $shippingAddress,
-                'payment_method' => $paymentMethod,
-                'payment_status' => 'unpaid',
-            ]);
+                $stmt->execute([
+                    'user_id' => $userId,
+                    'subtotal_amount' => $subtotal,
+                    'total_amount' => $total,
+                    'discount_amount' => $discountAmount,
+                    'coupon_code' => $couponCode !== '' ? $couponCode : null,
+                    'status' => 'pending',
+                    'shipping_address' => $shippingAddress,
+                    'payment_method' => $paymentMethod,
+                    'payment_status' => 'unpaid',
+                ]);
+            } else {
+                $stmt = $db->prepare(
+                    'INSERT INTO orders (user_id, total_amount, status, shipping_address, payment_method, payment_status)
+                     VALUES (:user_id, :total_amount, :status, :shipping_address, :payment_method, :payment_status)'
+                );
+
+                $stmt->execute([
+                    'user_id' => $userId,
+                    'total_amount' => $total,
+                    'status' => 'pending',
+                    'shipping_address' => $shippingAddress,
+                    'payment_method' => $paymentMethod,
+                    'payment_status' => 'unpaid',
+                ]);
+            }
 
             $orderId = (int) $db->lastInsertId();
 
@@ -68,6 +102,7 @@ class Order
                 $product = $item['product'];
                 $qty = (int) $item['qty'];
                 $productId = (int) $product['id'];
+                $unitPrice = (float) ($item['unit_price'] ?? $product['price']);
 
                 // Cong thuc tru ton kho an toan: chi tru neu con du.
                 $upd = $db->prepare(
@@ -82,14 +117,15 @@ class Order
                 }
 
                 $ins = $db->prepare(
-                    'INSERT INTO order_items (order_id, product_id, quantity, unit_price)
-                     VALUES (:order_id, :product_id, :quantity, :unit_price)'
+                    'INSERT INTO order_items (order_id, product_id, quantity, unit_price, unit_cost_price)
+                     VALUES (:order_id, :product_id, :quantity, :unit_price, :unit_cost_price)'
                 );
                 $ins->execute([
                     'order_id' => $orderId,
                     'product_id' => $productId,
                     'quantity' => $qty,
-                    'unit_price' => $product['price'],
+                    'unit_price' => $unitPrice,
+                    'unit_cost_price' => $product['cost_price'] ?? 0,
                 ]);
             }
 
@@ -260,6 +296,13 @@ class Order
     private function usersColumnExists(string $column): bool
     {
         $stmt = Database::connection()->prepare('SHOW COLUMNS FROM users LIKE :column_name');
+        $stmt->execute(['column_name' => $column]);
+        return (bool) $stmt->fetch();
+    }
+
+    private function ordersColumnExists(string $column): bool
+    {
+        $stmt = Database::connection()->prepare('SHOW COLUMNS FROM orders LIKE :column_name');
         $stmt->execute(['column_name' => $column]);
         return (bool) $stmt->fetch();
     }
