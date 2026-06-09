@@ -115,3 +115,8 @@ Trong database:
 - Apache tren Render tro thang vao thu muc `public`, vi vay URL khong can `/public`.
 - Huong dan day du: xem `RENDER_DEPLOY.md`.
 
+## 14. Trien khai Render free
+- Neu khong muon dung the tin dung/paid Blueprint, dung `render-free.yaml`.
+- Huong free chi chay web tren Render, database va anh san pham can luu ben ngoai.
+- Huong dan day du: xem `RENDER_FREE_DEPLOY.md`.
+

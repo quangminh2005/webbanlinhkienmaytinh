@@ -237,6 +237,10 @@ class AdminController extends Controller
             $this->redirect('/admin/products');
         }
 
+        if ($this->shouldUploadToCloudinary()) {
+            return $this->uploadImageToCloudinary($file);
+        }
+
         $uploadDir = __DIR__ . '/../../public/uploads';
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0777, true);
@@ -252,5 +256,78 @@ class AdminController extends Controller
 
         return '/uploads/' . $fileName;
     }
-}
 
+    private function shouldUploadToCloudinary(): bool
+    {
+        $storage = require __DIR__ . '/../../config/storage.php';
+        $cloudinary = $storage['cloudinary'] ?? [];
+
+        return ($storage['image_driver'] ?? 'local') === 'cloudinary'
+            && trim((string) ($cloudinary['cloud_name'] ?? '')) !== ''
+            && trim((string) ($cloudinary['api_key'] ?? '')) !== ''
+            && trim((string) ($cloudinary['api_secret'] ?? '')) !== '';
+    }
+
+    private function uploadImageToCloudinary(array $file): string
+    {
+        if (!function_exists('curl_init')) {
+            $_SESSION['error'] = 'May chu chua bat extension cURL de upload anh len Cloudinary.';
+            $this->redirect('/admin/products');
+        }
+
+        $storage = require __DIR__ . '/../../config/storage.php';
+        $cloudinary = $storage['cloudinary'] ?? [];
+        $cloudName = trim((string) ($cloudinary['cloud_name'] ?? ''));
+        $apiKey = trim((string) ($cloudinary['api_key'] ?? ''));
+        $apiSecret = trim((string) ($cloudinary['api_secret'] ?? ''));
+        $folder = trim((string) ($cloudinary['folder'] ?? 'pc-parts-shop/products'));
+        $timestamp = time();
+
+        $signatureParams = [
+            'folder' => $folder,
+            'timestamp' => $timestamp,
+        ];
+        ksort($signatureParams);
+        $signatureParts = [];
+        foreach ($signatureParams as $key => $value) {
+            $signatureParts[] = $key . '=' . $value;
+        }
+        $signatureBase = implode('&', $signatureParts);
+        $signature = sha1($signatureBase . $apiSecret);
+
+        $postFields = [
+            'file' => new \CURLFile((string) $file['tmp_name'], (string) mime_content_type((string) $file['tmp_name'])),
+            'api_key' => $apiKey,
+            'timestamp' => (string) $timestamp,
+            'folder' => $folder,
+            'signature' => $signature,
+        ];
+
+        $ch = curl_init('https://api.cloudinary.com/v1_1/' . rawurlencode($cloudName) . '/image/upload');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $postFields,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+        ]);
+
+        $response = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+
+        if (!is_string($response) || $response === '' || $status < 200 || $status >= 300) {
+            $_SESSION['error'] = 'Upload anh len Cloudinary that bai.' . ($error !== '' ? ' Loi: ' . $error : '');
+            $this->redirect('/admin/products');
+        }
+
+        $data = json_decode($response, true);
+        $secureUrl = is_array($data) ? trim((string) ($data['secure_url'] ?? '')) : '';
+        if ($secureUrl === '') {
+            $_SESSION['error'] = 'Cloudinary khong tra ve URL anh hop le.';
+            $this->redirect('/admin/products');
+        }
+
+        return $secureUrl;
+    }
+}

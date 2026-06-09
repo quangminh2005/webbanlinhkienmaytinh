@@ -1,0 +1,65 @@
+services:
+  - type: web
+    name: pc-parts-shop-free
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_TIMEZONE
+        value: Asia/Saigon
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_CHARSET
+        value: utf8mb4
+      - key: DB_TIMEZONE
+        value: "+07:00"
+      - key: DB_SSL_MODE
+        value: required
+      - key: DB_SSL_CA_BASE64
+        sync: false
+      - key: DB_SSL_VERIFY_SERVER_CERT
+        value: "false"
+      - key: CHAT_ENABLED
+        value: "true"
+      - key: N8N_WEBHOOK_URL
+        sync: false
+      - key: RAG_SYNC_WEBHOOK_URL
+        sync: false
+      - key: AI_CONTEXT_TOKEN
+        sync: false
+      - key: CHAT_TIMEOUT_SECONDS
+        value: "25"
+      - key: GOOGLE_OAUTH_ENABLED
+        value: "false"
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SHOP_NAME
+        value: PC Parts Shop
+      - key: SHOP_HOTLINE
+        value: "034 969 4556"
+      - key: SHOP_HOURS
+        value: "8:00 - 21:00"
+      - key: SHOP_EMAIL
+        value: quangminhngo41@gmail.com
+      - key: IMAGE_STORAGE_DRIVER
+        value: cloudinary
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: pc-parts-shop/products
