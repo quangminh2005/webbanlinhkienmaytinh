@@ -19,7 +19,7 @@ return [
     'rag_sync_webhook_url' => getenv('RAG_SYNC_WEBHOOK_URL') ?: 'https://9jqdl060.rpcld.net/webhook/pc-shop-rag-sync',
 
     /** Token rieng de N8N goi /api/ai-context va /api/ai-documents. Nen doi thanh chuoi dai, kho doan khi upload hosting. */
-    'ai_context_token' => getenv('AI_CONTEXT_TOKEN') ?: 'doi-token-nay-tren-hosting',
+    'ai_context_token' => getenv('AI_CONTEXT_TOKEN') ?: 'pcshop_ai_2026_9XkLm72Q_private',
 
     /** Timeout goi N8N (giay). InfinityFree thuong gioi ~30s */
     'timeout_seconds' => (int) (getenv('CHAT_TIMEOUT_SECONDS') ?: 25),
