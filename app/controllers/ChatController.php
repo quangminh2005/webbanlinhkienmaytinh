@@ -81,6 +81,18 @@ class ChatController
             ],
         ];
 
+        // Build recommendations require deterministic compatibility checks. Do not let
+        // the language model assemble CPU, mainboard and RAM independently from RAG.
+        if ($this->shouldUseValidatedBuildReply($message)) {
+            echo json_encode([
+                'ok' => true,
+                'reply' => $this->fallbackBuildReply($message),
+                'sessionId' => $sessionId,
+                'source' => 'validated_build',
+            ], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+
         $webhookUrl = trim((string) ($config['n8n_webhook_url'] ?? ''));
         if ($webhookUrl !== '') {
             $n8nMessage = $message;
@@ -612,6 +624,16 @@ class ChatController
         return false;
     }
 
+    private function shouldUseValidatedBuildReply(string $query): bool
+    {
+        $folded = $this->foldVietnamese($query);
+
+        return str_contains($folded, 'build')
+            || str_contains($folded, 'cau hinh pc')
+            || str_contains($folded, 'lap pc')
+            || str_contains($folded, 'rap pc');
+    }
+
     private function categorySlugFromQuery(string $query): string
     {
         $slugs = $this->categorySlugsFromQuery($query);
@@ -985,6 +1007,11 @@ class ChatController
             'cooler' => 0.04,
         ];
 
+        $foldedMessage = $this->foldVietnamese($message);
+        $preferCheapest = $this->matchesAny($foldedMessage, [
+            're nhat', 'gia re', 'thap nhat', 'tiet kiem', 're nhat co the',
+        ]);
+
         $items = [];
         $requestedMainboard = $this->fallbackRequestedBuildProduct('mainboard', $message);
         if ($requestedMainboard !== null) {
@@ -1019,9 +1046,50 @@ class ChatController
                 }
             }
 
-            $product = $this->fallbackBuildProductByCategory((string) $slug, $target, $constraints);
+            $product = $this->fallbackBuildProductByCategory(
+                (string) $slug,
+                $target,
+                $constraints,
+                $preferCheapest
+            );
             if ($product !== null) {
                 $items[(string) $slug] = $product;
+            }
+        }
+
+        $cpuSpecs = is_array($items['cpu']['specs'] ?? null) ? $items['cpu']['specs'] : [];
+        $mainSpecs = is_array($items['mainboard']['specs'] ?? null) ? $items['mainboard']['specs'] : [];
+        $cpuSocket = $this->normalizeCompatibilityValue((string) ($cpuSpecs['socket'] ?? ''));
+        $mainSocket = $this->normalizeCompatibilityValue((string) ($mainSpecs['socket'] ?? ''));
+
+        if ($cpuSocket !== '' && $mainSocket !== '' && $cpuSocket !== $mainSocket) {
+            $replacementMain = $this->fallbackBuildProductByCategory(
+                'mainboard',
+                $budget > 0 ? $budget * (float) $weights['mainboard'] : 0,
+                ['socket' => (string) ($cpuSpecs['socket'] ?? '')],
+                $preferCheapest
+            );
+            if ($replacementMain !== null) {
+                $items['mainboard'] = $replacementMain;
+                $mainSpecs = is_array($replacementMain['specs'] ?? null) ? $replacementMain['specs'] : [];
+            }
+        }
+
+        $mainRamType = $this->normalizeCompatibilityValue((string) ($mainSpecs['ram_type'] ?? ''));
+        $ramSpecs = is_array($items['ram']['specs'] ?? null) ? $items['ram']['specs'] : [];
+        $ramType = $this->normalizeCompatibilityValue((string) ($ramSpecs['ram_type'] ?? ''));
+
+        if ($mainRamType !== '' && $ramType !== $mainRamType) {
+            $replacementRam = $this->fallbackBuildProductByCategory(
+                'ram',
+                $budget > 0 ? $budget * (float) $weights['ram'] : 0,
+                ['ram_type' => (string) ($mainSpecs['ram_type'] ?? '')],
+                $preferCheapest
+            );
+            if ($replacementRam !== null) {
+                $items['ram'] = $replacementRam;
+            } else {
+                unset($items['ram']);
             }
         }
 
@@ -1029,7 +1097,12 @@ class ChatController
     }
 
     /** @return array<string, mixed>|null */
-    private function fallbackBuildProductByCategory(string $categorySlug, float $targetPrice, array $constraints = []): ?array
+    private function fallbackBuildProductByCategory(
+        string $categorySlug,
+        float $targetPrice,
+        array $constraints = [],
+        bool $preferCheapest = false
+    ): ?array
     {
         $sql = '
             SELECT p.id, p.name, p.price, p.stock_quantity, p.description, p.image_url,
@@ -1051,8 +1124,12 @@ class ChatController
             $params['ram_type'] = (string) $constraints['ram_type'];
         }
 
+        $orderBy = $preferCheapest
+            ? 'p.price ASC, p.id ASC'
+            : (($targetPrice > 0 ? 'ABS(p.price - :target_price) ASC,' : '') . ' p.price DESC, p.id DESC');
+
         $sql .= '
-            ORDER BY ' . ($targetPrice > 0 ? 'ABS(p.price - :target_price) ASC,' : '') . ' p.price DESC, p.id DESC
+            ORDER BY ' . $orderBy . '
             LIMIT 1
         ';
 
@@ -1065,6 +1142,11 @@ class ChatController
         $rows = $this->formatProductRowsForAi($stmt->fetchAll());
 
         return $rows[0] ?? null;
+    }
+
+    private function normalizeCompatibilityValue(string $value): string
+    {
+        return strtoupper(preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($value))) ?? '');
     }
 
     /** @return array<string, mixed>|null */
