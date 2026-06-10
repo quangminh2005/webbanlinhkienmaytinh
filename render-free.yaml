@@ -38,7 +38,7 @@ services:
       - key: AI_CONTEXT_TOKEN
         sync: false
       - key: CHAT_TIMEOUT_SECONDS
-        value: "25"
+        value: "35"
       - key: GOOGLE_OAUTH_ENABLED
         value: "false"
       - key: GOOGLE_CLIENT_ID

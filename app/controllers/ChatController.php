@@ -67,14 +67,17 @@ class ChatController
             'user' => $this->userContext(),
             'shop' => $config['shop'] ?? [],
             'siteBase' => defined('BASE_PATH') ? BASE_PATH : '',
+            'siteUrl' => $this->siteUrl(),
             'contextApiUrl' => $this->absoluteUrl('/api/ai-context'),
             'documentsApiUrl' => $this->absoluteUrl('/api/ai-documents'),
             'contextApiToken' => (string) ($config['ai_context_token'] ?? ''),
             'rag' => [
                 'enabled' => true,
+                'mode' => 'direct_mysql',
+                'mysqlView' => 'ai_rag_documents',
                 'documentsApiUrl' => $this->absoluteUrl('/api/ai-documents'),
                 'documentsApiToken' => (string) ($config['ai_context_token'] ?? ''),
-                'notes' => 'Use RAG/vector search in n8n. Do not expect full websiteData in chat payload.',
+                'notes' => 'Use n8n RAG/vector search from Aiven MySQL view ai_rag_documents. Do not expect full websiteData in chat payload.',
             ],
         ];
 
@@ -160,6 +163,7 @@ class ChatController
             'user' => $context['user'] ?? [],
             'shop' => $context['shop'] ?? [],
             'siteBase' => $context['siteBase'] ?? '',
+            'siteUrl' => $context['siteUrl'] ?? '',
             'contextApiUrl' => $context['contextApiUrl'] ?? '',
             'documentsApiUrl' => $context['documentsApiUrl'] ?? '',
             'contextApiToken' => $context['contextApiToken'] ?? '',
@@ -241,6 +245,11 @@ class ChatController
 
     private function absoluteUrl(string $path): string
     {
+        return $this->siteUrl() . app_url($path);
+    }
+
+    private function siteUrl(): string
+    {
         $scheme = 'http';
         if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
             $scheme = (string) $_SERVER['HTTP_X_FORWARDED_PROTO'];
@@ -249,7 +258,7 @@ class ChatController
         }
 
         $host = (string) ($_SERVER['HTTP_HOST'] ?? 'localhost');
-        return $scheme . '://' . $host . app_url($path);
+        return $scheme . '://' . $host;
     }
 
     private function productIdFromPagePath(string $pagePath): ?int
