@@ -30,26 +30,7 @@ class BuilderController extends Controller
             $selected[$key] = isset($_GET[$key]) ? $productModel->find((int) $_GET[$key]) : null;
         }
 
-        $warnings = [];
-
-        if ($selected['cpu'] && $selected['main'] && $selected['cpu']['socket'] !== $selected['main']['socket']) {
-            $warnings[] = 'CPU va Mainboard khong cung socket.';
-        }
-
-        if ($selected['main'] && $selected['ram']) {
-            $mainRamType = trim((string) ($selected['main']['ram_type'] ?? ''));
-            $ramType = trim((string) ($selected['ram']['ram_type'] ?? ''));
-            if ($mainRamType !== '' && $ramType !== '' && $mainRamType !== $ramType) {
-                $warnings[] = 'RAM va Mainboard khong cung loai RAM.';
-            }
-        }
-
-        if ($selected['vga'] && $selected['psu']) {
-            $required = ((int) $selected['vga']['wattage']) + 250;
-            if ((int) $selected['psu']['wattage'] < $required) {
-                $warnings[] = 'Nguon co the khong du cong suat cho VGA da chon.';
-            }
-        }
+        $warnings = $this->compatibilityErrors($selected);
 
         $total = 0.0;
         $selectedItems = [];
@@ -82,6 +63,7 @@ class BuilderController extends Controller
         $productModel = new Product();
         $added = 0;
         $skipped = [];
+        $selected = [];
 
         foreach ($this->parts as $key => $part) {
             $productId = (int) ($_POST[$key] ?? 0);
@@ -90,9 +72,25 @@ class BuilderController extends Controller
             }
 
             $product = $productModel->find($productId);
+            if ($product) {
+                $selected[$key] = $product;
+            }
+        }
+
+        $compatibilityErrors = $this->compatibilityErrors($selected);
+        if ($compatibilityErrors !== []) {
+            $_SESSION['error'] = implode(' ', $compatibilityErrors);
+            $this->redirect('/build-pc?' . http_build_query($_POST));
+            return;
+        }
+
+        foreach ($this->parts as $key => $part) {
+            $product = $selected[$key] ?? null;
             if (!$product) {
                 continue;
             }
+
+            $productId = (int) $product['id'];
 
             $currentQty = (int) ($_SESSION['cart'][$productId] ?? 0);
             if ((int) $product['stock_quantity'] <= $currentQty) {
@@ -117,6 +115,54 @@ class BuilderController extends Controller
         }
 
         $this->redirect('/cart');
+    }
+
+    /** @param array<string, array<string, mixed>|null> $selected */
+    private function compatibilityErrors(array $selected): array
+    {
+        $errors = [];
+
+        if (!empty($selected['cpu']) && !empty($selected['main'])) {
+            $cpuSocket = $this->normalizeCompatibilityValue((string) ($selected['cpu']['socket'] ?? ''));
+            $mainSocket = $this->normalizeCompatibilityValue((string) ($selected['main']['socket'] ?? ''));
+            if ($cpuSocket === '' || $mainSocket === '') {
+                $errors[] = 'Khong du du lieu socket de xac minh CPU va Mainboard.';
+            } elseif ($cpuSocket !== $mainSocket) {
+                $errors[] = 'CPU va Mainboard khong cung socket.';
+            }
+        }
+
+        if (!empty($selected['main']) && !empty($selected['ram'])) {
+            $mainRamType = $this->normalizeCompatibilityValue((string) ($selected['main']['ram_type'] ?? ''));
+            $ramType = $this->normalizeCompatibilityValue((string) ($selected['ram']['ram_type'] ?? ''));
+            if ($mainRamType === '' || $ramType === '') {
+                $errors[] = 'Khong du du lieu de xac minh loai RAM cua Mainboard va RAM.';
+            } elseif ($mainRamType !== $ramType) {
+                $errors[] = 'RAM va Mainboard khong cung loai RAM.';
+            }
+        }
+
+        if (!empty($selected['vga']) && !empty($selected['psu'])) {
+            $vgaWattage = (int) ($selected['vga']['wattage'] ?? 0);
+            $psuWattage = (int) ($selected['psu']['wattage'] ?? 0);
+            if ($vgaWattage <= 0 || $psuWattage <= 0) {
+                $errors[] = 'Khong du du lieu cong suat de xac minh VGA va Nguon.';
+            } elseif ($psuWattage < $this->minimumPsuWattage($vgaWattage)) {
+                $errors[] = 'Nguon khong du cong suat du phong cho VGA da chon.';
+            }
+        }
+
+        return array_values(array_unique($errors));
+    }
+
+    private function normalizeCompatibilityValue(string $value): string
+    {
+        return strtoupper(preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($value))) ?? '');
+    }
+
+    private function minimumPsuWattage(int $vgaWattage): int
+    {
+        return max(450, $vgaWattage + 250);
     }
 }
 

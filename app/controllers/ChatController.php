@@ -102,6 +102,12 @@ class ChatController
 
             $reply = $this->callN8n($webhookUrl, $n8nMessage, $context, (int) ($config['timeout_seconds'] ?? 25));
             if ($reply !== null) {
+                if ($this->isMainboardCompatibilityQuery($message)) {
+                    $validatedReply = $this->validatedMainboardsForCpuReply($message . "\n" . $reply);
+                    if ($validatedReply !== null) {
+                        $reply = $validatedReply;
+                    }
+                }
                 if ($quickActionId === 'product_detail' && is_array($currentProduct) && $this->isProductNotFoundReply($reply)) {
                     $reply = $this->fallbackProductReply($currentProduct);
                 }
@@ -634,6 +640,117 @@ class ChatController
             || str_contains($folded, 'rap pc');
     }
 
+    private function isMainboardCompatibilityQuery(string $query): bool
+    {
+        $folded = $this->foldVietnamese($query);
+        $mentionsMainboard = $this->matchesAny($folded, [
+            'main tuong thich',
+            'mainboard tuong thich',
+            'main phu hop',
+            'mainboard phu hop',
+            'bo mach chu tuong thich',
+            'bo mach chu phu hop',
+        ]);
+
+        return $mentionsMainboard
+            || ($this->matchesAny($folded, ['main', 'mainboard', 'bo mach chu'])
+                && $this->matchesAny($folded, ['cpu nay', 'cpu do', 'cpu tren', 'tuong thich', 'phu hop']));
+    }
+
+    private function validatedMainboardsForCpuReply(string $contextText): ?string
+    {
+        $cpu = $this->productMentionedInText('cpu', $contextText);
+        if ($cpu === null) {
+            return null;
+        }
+
+        $socket = trim((string) ($cpu['specs']['socket'] ?? ''));
+        if ($socket === '') {
+            return null;
+        }
+
+        $stmt = Database::connection()->prepare("
+            SELECT p.id, p.name, p.price, p.stock_quantity, p.description, p.image_url,
+                   p.socket, p.ram_type, p.vram_gb, p.wattage,
+                   c.name AS category_name, c.slug AS category_slug
+            FROM products p
+            JOIN categories c ON c.id = p.category_id
+            WHERE c.slug = :category_slug
+              AND p.stock_quantity > 0
+              AND UPPER(REPLACE(REPLACE(TRIM(p.socket), ' ', ''), '-', '')) = :socket
+            ORDER BY p.price ASC, p.id ASC
+        ");
+        $stmt->execute([
+            'category_slug' => 'mainboard',
+            'socket' => $this->normalizeCompatibilityValue($socket),
+        ]);
+        $mainboards = $this->formatProductRowsForAi($stmt->fetchAll());
+
+        if ($mainboards === []) {
+            return 'Hiện shop chưa có mainboard còn hàng dùng socket ' . $socket
+                . ' tương thích với CPU ' . (string) $cpu['name'] . '.';
+        }
+
+        $lines = [
+            'Các mainboard còn hàng tương thích với CPU ' . (string) $cpu['name']
+                . ' (socket ' . $socket . ') gồm:',
+            '',
+        ];
+
+        foreach ($mainboards as $index => $mainboard) {
+            $ramType = trim((string) ($mainboard['specs']['ram_type'] ?? ''));
+            $mainboardSocket = trim((string) ($mainboard['specs']['socket'] ?? ''));
+            $lines[] = ($index + 1) . '. ' . (string) $mainboard['name']
+                . ' | Giá: ' . (string) $mainboard['price_text']
+                . ' | Socket: ' . $mainboardSocket
+                . ($ramType !== '' ? ' | RAM: ' . $ramType : '')
+                . ' | Tồn kho: ' . (int) $mainboard['stock_quantity']
+                . ' | Link: ' . (string) $mainboard['url'];
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function productMentionedInText(string $categorySlug, string $text): ?array
+    {
+        $products = $this->productsByCategoryForAi($categorySlug, 0);
+        if ($products === []) {
+            return null;
+        }
+
+        $foldedText = $this->foldVietnamese($text);
+        $bestProduct = null;
+        $bestLength = 0;
+
+        foreach ($products as $product) {
+            $name = trim((string) ($product['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $foldedName = $this->foldVietnamese($name);
+            if ($foldedName !== '' && str_contains($foldedText, $foldedName) && mb_strlen($foldedName) > $bestLength) {
+                $bestProduct = $product;
+                $bestLength = mb_strlen($foldedName);
+                continue;
+            }
+
+            foreach (preg_split('/[^a-z0-9]+/', $foldedName) ?: [] as $token) {
+                if (strlen($token) < 5 || !preg_match('/\d/', $token)) {
+                    continue;
+                }
+
+                if (str_contains($foldedText, $token) && strlen($token) > $bestLength) {
+                    $bestProduct = $product;
+                    $bestLength = strlen($token);
+                }
+            }
+        }
+
+        return $bestProduct;
+    }
+
     private function categorySlugFromQuery(string $query): string
     {
         $slugs = $this->categorySlugsFromQuery($query);
@@ -944,7 +1061,8 @@ class ChatController
     {
         $budget = $this->budgetFromMessage($message);
         $items = $this->fallbackBuildItems($budget, $message);
-        if ($items === []) {
+        $compatibilityErrors = $this->validateBuildCompatibility($items, true);
+        if ($items === [] || $compatibilityErrors !== []) {
             return "Hiện shop chưa có đủ dữ liệu linh kiện còn hàng để chốt cấu hình PC hoàn chỉnh. Anh/chị có thể vào Build PC để chọn trực tiếp: "
                 . $this->absoluteUrl('/build-pc');
         }
@@ -1045,6 +1163,13 @@ class ChatController
                     $constraints['socket'] = (string) $cpuSpecs['socket'];
                 }
             }
+            if ($slug === 'psu' && isset($items['vga'])) {
+                $vgaSpecs = is_array($items['vga']['specs'] ?? null) ? $items['vga']['specs'] : [];
+                $vgaWattage = (int) ($vgaSpecs['wattage'] ?? 0);
+                if ($vgaWattage > 0) {
+                    $constraints['wattage_min'] = $this->minimumPsuWattage($vgaWattage);
+                }
+            }
 
             $product = $this->fallbackBuildProductByCategory(
                 (string) $slug,
@@ -1093,6 +1218,24 @@ class ChatController
             }
         }
 
+        $vgaSpecs = is_array($items['vga']['specs'] ?? null) ? $items['vga']['specs'] : [];
+        $psuSpecs = is_array($items['psu']['specs'] ?? null) ? $items['psu']['specs'] : [];
+        $vgaWattage = (int) ($vgaSpecs['wattage'] ?? 0);
+        $psuWattage = (int) ($psuSpecs['wattage'] ?? 0);
+        if ($vgaWattage > 0 && $psuWattage < $this->minimumPsuWattage($vgaWattage)) {
+            $replacementPsu = $this->fallbackBuildProductByCategory(
+                'psu',
+                $budget > 0 ? $budget * (float) $weights['psu'] : 0,
+                ['wattage_min' => $this->minimumPsuWattage($vgaWattage)],
+                $preferCheapest
+            );
+            if ($replacementPsu !== null) {
+                $items['psu'] = $replacementPsu;
+            } else {
+                unset($items['psu']);
+            }
+        }
+
         return $items;
     }
 
@@ -1116,12 +1259,16 @@ class ChatController
 
         $params = ['category_slug' => $categorySlug];
         if (!empty($constraints['socket'])) {
-            $sql .= ' AND p.socket = :socket';
-            $params['socket'] = (string) $constraints['socket'];
+            $sql .= " AND UPPER(REPLACE(REPLACE(TRIM(p.socket), ' ', ''), '-', '')) = :socket";
+            $params['socket'] = $this->normalizeCompatibilityValue((string) $constraints['socket']);
         }
         if (!empty($constraints['ram_type'])) {
-            $sql .= ' AND p.ram_type = :ram_type';
-            $params['ram_type'] = (string) $constraints['ram_type'];
+            $sql .= " AND UPPER(REPLACE(REPLACE(TRIM(p.ram_type), ' ', ''), '-', '')) = :ram_type";
+            $params['ram_type'] = $this->normalizeCompatibilityValue((string) $constraints['ram_type']);
+        }
+        if (!empty($constraints['wattage_min'])) {
+            $sql .= ' AND p.wattage >= :wattage_min';
+            $params['wattage_min'] = (int) $constraints['wattage_min'];
         }
 
         $orderBy = $preferCheapest
@@ -1147,6 +1294,70 @@ class ChatController
     private function normalizeCompatibilityValue(string $value): string
     {
         return strtoupper(preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($value))) ?? '');
+    }
+
+    private function minimumPsuWattage(int $vgaWattage): int
+    {
+        return max(450, $vgaWattage + 250);
+    }
+
+    /** @param array<string, array<string, mixed>> $items */
+    private function validateBuildCompatibility(array $items, bool $requireComplete = false): array
+    {
+        $errors = [];
+
+        if ($requireComplete) {
+            foreach ($this->buildRequirementsForAi()['required'] as $slug) {
+                if (empty($items[(string) $slug])) {
+                    $errors[] = 'Thieu linh kien bat buoc: ' . (string) $slug;
+                }
+            }
+        }
+
+        foreach ($items as $product) {
+            if ((int) ($product['stock_quantity'] ?? 0) <= 0) {
+                $errors[] = 'Linh kien het hang: ' . (string) ($product['name'] ?? 'khong xac dinh');
+            }
+        }
+
+        if (isset($items['cpu'], $items['mainboard'])) {
+            $cpuSocket = $this->buildSpec($items['cpu'], 'socket');
+            $mainSocket = $this->buildSpec($items['mainboard'], 'socket');
+            if ($cpuSocket === '' || $mainSocket === '') {
+                $errors[] = 'Khong du du lieu socket CPU/Mainboard de xac minh.';
+            } elseif ($cpuSocket !== $mainSocket) {
+                $errors[] = 'CPU va Mainboard khong cung socket.';
+            }
+        }
+
+        if (isset($items['mainboard'], $items['ram'])) {
+            $mainRamType = $this->buildSpec($items['mainboard'], 'ram_type');
+            $ramType = $this->buildSpec($items['ram'], 'ram_type');
+            if ($mainRamType === '' || $ramType === '') {
+                $errors[] = 'Khong du du lieu RAM type de xac minh Mainboard/RAM.';
+            } elseif ($mainRamType !== $ramType) {
+                $errors[] = 'Mainboard va RAM khong cung chuan RAM.';
+            }
+        }
+
+        if (isset($items['vga'], $items['psu'])) {
+            $vgaWattage = (int) ($items['vga']['specs']['wattage'] ?? 0);
+            $psuWattage = (int) ($items['psu']['specs']['wattage'] ?? 0);
+            if ($vgaWattage <= 0 || $psuWattage <= 0) {
+                $errors[] = 'Khong du du lieu cong suat VGA/PSU de xac minh.';
+            } elseif ($psuWattage < $this->minimumPsuWattage($vgaWattage)) {
+                $errors[] = 'Nguon khong du cong suat du phong cho VGA.';
+            }
+        }
+
+        return array_values(array_unique($errors));
+    }
+
+    /** @param array<string, mixed> $product */
+    private function buildSpec(array $product, string $key): string
+    {
+        $specs = is_array($product['specs'] ?? null) ? $product['specs'] : [];
+        return $this->normalizeCompatibilityValue((string) ($specs[$key] ?? ''));
     }
 
     /** @return array<string, mixed>|null */
