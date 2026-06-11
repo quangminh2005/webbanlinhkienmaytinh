@@ -9,6 +9,8 @@ use Throwable;
 
 class ChatController
 {
+    private string $activeChatSessionId = '';
+
     public function send(): void
     {
         header('Content-Type: application/json; charset=utf-8');
@@ -51,11 +53,13 @@ class ChatController
         if ($sessionId === '') {
             $sessionId = bin2hex(random_bytes(16));
         }
+        $this->activeChatSessionId = $sessionId;
 
         $quickActionId = (string) ($payload['quickActionId'] ?? '');
         $pagePath = (string) ($payload['pagePath'] ?? '');
         $currentProductId = $this->productIdFromPagePath($pagePath);
         $currentProduct = $this->currentProductForAi($pagePath);
+        $this->rememberBuildProductsFromMessage($message, $currentProduct);
 
         $context = [
             'sessionId' => $sessionId,
@@ -663,6 +667,7 @@ class ChatController
         if ($cpu === null) {
             return null;
         }
+        $this->rememberBuildProduct($cpu);
 
         $socket = trim((string) ($cpu['specs']['socket'] ?? ''));
         if ($socket === '') {
@@ -1131,14 +1136,17 @@ class ChatController
         ]);
 
         $items = [];
-        $requestedMainboard = $this->fallbackRequestedBuildProduct('mainboard', $message);
-        if ($requestedMainboard !== null) {
-            $items['mainboard'] = $requestedMainboard;
-        }
+        foreach ($this->buildRequirementsForAi()['required'] as $slug) {
+            $slug = (string) $slug;
+            $requestedProduct = $this->fallbackRequestedBuildProduct($slug, $message);
+            $rememberedProduct = $requestedProduct === null
+                ? $this->rememberedBuildProduct($slug)
+                : null;
+            $selectedProduct = $requestedProduct ?? $rememberedProduct;
 
-        $requestedCase = $this->fallbackRequestedBuildProduct('case', $message);
-        if ($requestedCase !== null) {
-            $items['case'] = $requestedCase;
+            if ($selectedProduct !== null) {
+                $items[$slug] = $selectedProduct;
+            }
         }
 
         foreach ($this->buildRequirementsForAi()['required'] as $slug) {
@@ -1387,29 +1395,129 @@ class ChatController
         return $bestScore > 0 ? $bestProduct : null;
     }
 
+    /** @param array<string, mixed>|null $currentProduct */
+    private function rememberBuildProductsFromMessage(string $message, ?array $currentProduct): void
+    {
+        if (is_array($currentProduct)) {
+            $this->rememberBuildProduct($currentProduct);
+        }
+
+        $buildSlugs = ['cpu', 'mainboard', 'ram', 'vga', 'psu', 'case', 'ssd', 'cooler', 'hdd'];
+        $slugsToInspect = array_values(array_intersect(
+            $buildSlugs,
+            $this->categorySlugsFromQuery($message)
+        ));
+
+        if ($this->isMainboardCompatibilityQuery($message) && !in_array('cpu', $slugsToInspect, true)) {
+            $slugsToInspect[] = 'cpu';
+        }
+
+        if ($this->shouldUseValidatedBuildReply($message)) {
+            $slugsToInspect = $buildSlugs;
+        }
+
+        foreach ($slugsToInspect as $slug) {
+            $product = $this->fallbackRequestedBuildProduct($slug, $message);
+            if ($product !== null) {
+                $this->rememberBuildProduct($product);
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $product */
+    private function rememberBuildProduct(array $product): void
+    {
+        $categorySlug = (string) ($product['category_slug'] ?? '');
+        $productId = (int) ($product['id'] ?? 0);
+        if (
+            $this->activeChatSessionId === ''
+            || $productId <= 0
+            || !in_array($categorySlug, ['cpu', 'mainboard', 'ram', 'vga', 'psu', 'case', 'ssd', 'cooler', 'hdd'], true)
+        ) {
+            return;
+        }
+
+        $sessionKey = hash('sha256', $this->activeChatSessionId);
+        if (!isset($_SESSION['chat_product_context']) || !is_array($_SESSION['chat_product_context'])) {
+            $_SESSION['chat_product_context'] = [];
+        }
+        if (!isset($_SESSION['chat_product_context'][$sessionKey]) || !is_array($_SESSION['chat_product_context'][$sessionKey])) {
+            $_SESSION['chat_product_context'][$sessionKey] = [];
+        }
+
+        $_SESSION['chat_product_context'][$sessionKey][$categorySlug] = $productId;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function rememberedBuildProduct(string $categorySlug): ?array
+    {
+        if ($this->activeChatSessionId === '') {
+            return null;
+        }
+
+        $sessionKey = hash('sha256', $this->activeChatSessionId);
+        $productId = (int) ($_SESSION['chat_product_context'][$sessionKey][$categorySlug] ?? 0);
+        if ($productId <= 0) {
+            return null;
+        }
+
+        foreach ($this->productsByCategoryForAi($categorySlug, 0) as $product) {
+            if ((int) ($product['id'] ?? 0) !== $productId) {
+                continue;
+            }
+
+            if (!empty($product['in_stock'])) {
+                return $product;
+            }
+
+            unset($_SESSION['chat_product_context'][$sessionKey][$categorySlug]);
+            return null;
+        }
+
+        unset($_SESSION['chat_product_context'][$sessionKey][$categorySlug]);
+        return null;
+    }
+
     private function productMentionScore(string $productName, string $foldedMessage): int
     {
         $foldedName = $this->foldVietnamese($productName);
+        if ($foldedName !== '' && str_contains($foldedMessage, $foldedName)) {
+            return 1000 + strlen($foldedName);
+        }
+
         preg_match_all('/[a-z0-9]+/i', $foldedName, $matches);
 
         $ignored = [
             'main', 'mainboard', 'motherboard', 'case', 'cpu', 'ram', 'vga', 'psu', 'ssd', 'hdd',
             'pc', 'build', 'dung', 'hoan', 'thien', 'linh', 'kien', 'con', 'lai', 'them', 'voi',
-            'asus', 'gigabyte', 'msi',
+            'asus', 'gigabyte', 'msi', 'intel', 'amd', 'core', 'ultra', 'ryzen', 'radeon',
+            'geforce', 'nvidia', 'gaming', 'desktop', 'wifi', 'plus', 'pro', 'series',
         ];
 
         $score = 0;
+        $distinctiveMatches = 0;
+        $wordMatches = 0;
         foreach (array_unique($matches[0] ?? []) as $token) {
             $token = strtolower($token);
             if (strlen($token) < 3 || in_array($token, $ignored, true)) {
                 continue;
             }
             if (str_contains($foldedMessage, $token)) {
-                $score++;
+                if (preg_match('/\d/', $token) === 1) {
+                    $score += 4;
+                    $distinctiveMatches++;
+                } else {
+                    $score++;
+                    $wordMatches++;
+                }
             }
         }
 
-        return $score;
+        if ($distinctiveMatches > 0) {
+            return $score;
+        }
+
+        return $wordMatches >= 2 ? $score : 0;
     }
 
     private function budgetFromMessage(string $message): float
