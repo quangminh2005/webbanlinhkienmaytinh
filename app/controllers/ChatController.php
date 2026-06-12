@@ -54,6 +54,7 @@ class ChatController
             $sessionId = bin2hex(random_bytes(16));
         }
         $this->activeChatSessionId = $sessionId;
+        $this->rememberBuildPreferences($message);
 
         $quickActionId = (string) ($payload['quickActionId'] ?? '');
         $pagePath = (string) ($payload['pagePath'] ?? '');
@@ -641,7 +642,22 @@ class ChatController
         return str_contains($folded, 'build')
             || str_contains($folded, 'cau hinh pc')
             || str_contains($folded, 'lap pc')
-            || str_contains($folded, 'rap pc');
+            || str_contains($folded, 'rap pc')
+            || ($this->buildPreferences() !== [] && $this->matchesAny($folded, [
+                'doi sang amd',
+                'doi sang intel',
+                'dung amd',
+                'dung intel',
+                'case trang',
+                'vo case trang',
+                'mau trang',
+                'co wifi',
+                'ssd 1tb',
+                'nvme 1tb',
+                'tu van lai',
+                'build lai',
+                'cau hinh lai',
+            ]));
     }
 
     private function isMainboardCompatibilityQuery(string $query): bool
@@ -742,11 +758,12 @@ class ChatController
             }
 
             foreach (preg_split('/[^a-z0-9]+/', $foldedName) ?: [] as $token) {
-                if (strlen($token) < 5 || !preg_match('/\d/', $token)) {
+                if (strlen($token) < 4 || !preg_match('/\d/', $token)) {
                     continue;
                 }
 
-                if (str_contains($foldedText, $token) && strlen($token) > $bestLength) {
+                $tokenPattern = '/(?:^|[^a-z0-9])' . preg_quote($token, '/') . '(?:$|[^a-z0-9])/';
+                if (preg_match($tokenPattern, $foldedText) === 1 && strlen($token) > $bestLength) {
                     $bestProduct = $product;
                     $bestLength = strlen($token);
                 }
@@ -1065,11 +1082,18 @@ class ChatController
     private function fallbackBuildReply(string $message): string
     {
         $budget = $this->budgetFromMessage($message);
+        if ($budget <= 0) {
+            $budget = (float) ($this->buildPreferences()['budget'] ?? 0);
+        }
         $items = $this->fallbackBuildItems($budget, $message);
         $compatibilityErrors = $this->validateBuildCompatibility($items, true);
         if ($items === [] || $compatibilityErrors !== []) {
             return "Hiện shop chưa có đủ dữ liệu linh kiện còn hàng để chốt cấu hình PC hoàn chỉnh. Anh/chị có thể vào Build PC để chọn trực tiếp: "
                 . $this->absoluteUrl('/build-pc');
+        }
+
+        foreach ($items as $product) {
+            $this->rememberBuildProduct($product);
         }
 
         $labels = $this->buildRequirementsForAi()['labels'];
@@ -1118,6 +1142,133 @@ class ChatController
 
     /** @return array<string, array<string, mixed>> */
     private function fallbackBuildItems(float $budget, string $message): array
+    {
+        $weights = [
+            'cpu' => 0.18,
+            'mainboard' => 0.12,
+            'ram' => 0.08,
+            'vga' => 0.38,
+            'psu' => 0.07,
+            'case' => 0.06,
+            'ssd' => 0.07,
+            'cooler' => 0.04,
+        ];
+        $preferences = $this->buildPreferences();
+        $purpose = (string) ($preferences['purpose'] ?? '');
+        if ($purpose === 'ai') {
+            $weights = array_replace($weights, ['cpu' => 0.20, 'ram' => 0.11, 'vga' => 0.39, 'ssd' => 0.08]);
+        } elseif ($purpose === 'programming') {
+            $weights = array_replace($weights, ['cpu' => 0.27, 'ram' => 0.13, 'vga' => 0.22, 'ssd' => 0.10]);
+        }
+
+        $foldedMessage = $this->foldVietnamese($message);
+        $preferCheapest = !empty($preferences['prefer_cheapest'])
+            || $this->matchesAny($foldedMessage, ['re nhat', 'gia re', 'thap nhat', 'tiet kiem', 're nhat co the'])
+            || ($budget > 0 && $budget < 35000000);
+        $target = static fn (string $slug): float => $budget > 0
+            ? $budget * (float) ($weights[$slug] ?? 0.1)
+            : 0.0;
+
+        $items = [];
+
+        $cpuConstraints = [];
+        if (($preferences['cpu_vendor'] ?? '') === 'amd') {
+            $cpuConstraints['name_any'] = ['AMD', 'Ryzen'];
+        } elseif (($preferences['cpu_vendor'] ?? '') === 'intel') {
+            $cpuConstraints['name_any'] = ['Intel', 'Core'];
+        }
+        $items['cpu'] = $this->selectBuildProduct('cpu', $message, $target('cpu'), $cpuConstraints, $preferCheapest);
+        if ($items['cpu'] === null) {
+            unset($items['cpu']);
+            return $items;
+        }
+
+        $cpuSocket = (string) (($items['cpu']['specs']['socket'] ?? ''));
+        $mainConstraints = ['socket' => $cpuSocket];
+        if (!empty($preferences['wifi'])) {
+            $mainConstraints['name_any'] = ['WiFi', 'Wireless'];
+        }
+        $mainboard = $this->selectBuildProduct('mainboard', $message, $target('mainboard'), $mainConstraints, $preferCheapest);
+        if ($mainboard === null && isset($mainConstraints['name_any'])) {
+            unset($mainConstraints['name_any']);
+            $mainboard = $this->selectBuildProduct('mainboard', $message, $target('mainboard'), $mainConstraints, $preferCheapest);
+        }
+        if ($mainboard !== null) {
+            $items['mainboard'] = $mainboard;
+        } else {
+            return $items;
+        }
+
+        $mainRamType = (string) (($items['mainboard']['specs']['ram_type'] ?? ''));
+        $ram = $this->selectBuildProduct('ram', $message, $target('ram'), ['ram_type' => $mainRamType], $preferCheapest);
+        if ($ram !== null) {
+            $items['ram'] = $ram;
+        }
+
+        $baseVgaConstraints = ['wattage_min' => 1];
+        $vgaConstraints = $baseVgaConstraints;
+        if (($preferences['gpu_vendor'] ?? '') === 'nvidia') {
+            $vgaConstraints['name_any'] = ['NVIDIA', 'GeForce', 'RTX'];
+        } elseif (($preferences['gpu_vendor'] ?? '') === 'amd') {
+            $vgaConstraints['name_any'] = ['AMD', 'Radeon', 'RX'];
+        }
+        $vga = $this->selectBuildProduct('vga', $message, $target('vga'), $vgaConstraints, $preferCheapest);
+        if ($vga === null && $vgaConstraints !== $baseVgaConstraints) {
+            $vga = $this->selectBuildProduct(
+                'vga',
+                $message,
+                $target('vga'),
+                $baseVgaConstraints,
+                $preferCheapest
+            );
+        }
+        if ($vga !== null) {
+            $items['vga'] = $vga;
+        }
+
+        $vgaWattage = (int) ($items['vga']['specs']['wattage'] ?? 0);
+        $psuConstraints = $vgaWattage > 0
+            ? ['wattage_min' => $this->minimumPsuWattage($vgaWattage)]
+            : [];
+        $psu = $this->selectBuildProduct('psu', $message, $target('psu'), $psuConstraints, $preferCheapest);
+        if ($psu !== null) {
+            $items['psu'] = $psu;
+        }
+
+        $caseConstraints = [];
+        if (($preferences['case_color'] ?? '') === 'white') {
+            $caseConstraints['name_any'] = ['White', 'Trang'];
+        }
+        $case = $this->selectBuildProduct('case', $message, $target('case'), $caseConstraints, $preferCheapest);
+        if ($case === null && $caseConstraints !== []) {
+            $case = $this->selectBuildProduct('case', $message, $target('case'), [], $preferCheapest);
+        }
+        if ($case !== null) {
+            $items['case'] = $case;
+        }
+
+        $ssdConstraints = [];
+        if ((int) ($preferences['ssd_capacity_tb'] ?? 0) === 1) {
+            $ssdConstraints['name_any'] = ['1TB', '1000GB'];
+        }
+        $ssd = $this->selectBuildProduct('ssd', $message, $target('ssd'), $ssdConstraints, $preferCheapest);
+        if ($ssd === null && $ssdConstraints !== []) {
+            $ssd = $this->selectBuildProduct('ssd', $message, $target('ssd'), [], $preferCheapest);
+        }
+        if ($ssd !== null) {
+            $items['ssd'] = $ssd;
+        }
+
+        $cooler = $this->selectBuildProduct('cooler', $message, $target('cooler'), [], $preferCheapest);
+        if ($cooler !== null) {
+            $items['cooler'] = $cooler;
+        }
+
+        return $items;
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    private function fallbackBuildItemsLegacy(float $budget, string $message): array
     {
         $weights = [
             'cpu' => 0.18,
@@ -1248,6 +1399,72 @@ class ChatController
     }
 
     /** @return array<string, mixed>|null */
+    private function selectBuildProduct(
+        string $categorySlug,
+        string $message,
+        float $targetPrice,
+        array $constraints = [],
+        bool $preferCheapest = false
+    ): ?array {
+        $requested = $this->fallbackRequestedBuildProduct($categorySlug, $message);
+        if ($requested !== null && $this->buildProductMatchesConstraints($requested, $constraints)) {
+            return $requested;
+        }
+
+        $remembered = $this->rememberedBuildProduct($categorySlug);
+        if ($remembered !== null && $this->buildProductMatchesConstraints($remembered, $constraints)) {
+            return $remembered;
+        }
+
+        return $this->fallbackBuildProductByCategory(
+            $categorySlug,
+            $targetPrice,
+            $constraints,
+            $preferCheapest
+        );
+    }
+
+    /** @param array<string, mixed> $product */
+    private function buildProductMatchesConstraints(array $product, array $constraints): bool
+    {
+        if (empty($product['in_stock']) || (int) ($product['stock_quantity'] ?? 0) <= 0) {
+            return false;
+        }
+
+        $specs = is_array($product['specs'] ?? null) ? $product['specs'] : [];
+        if (!empty($constraints['socket'])) {
+            if ($this->normalizeCompatibilityValue((string) ($specs['socket'] ?? ''))
+                !== $this->normalizeCompatibilityValue((string) $constraints['socket'])) {
+                return false;
+            }
+        }
+        if (!empty($constraints['ram_type'])) {
+            if ($this->normalizeCompatibilityValue((string) ($specs['ram_type'] ?? ''))
+                !== $this->normalizeCompatibilityValue((string) $constraints['ram_type'])) {
+                return false;
+            }
+        }
+        if (!empty($constraints['wattage_min']) && (int) ($specs['wattage'] ?? 0) < (int) $constraints['wattage_min']) {
+            return false;
+        }
+        if (!empty($constraints['name_any']) && is_array($constraints['name_any'])) {
+            $foldedName = $this->foldVietnamese((string) ($product['name'] ?? ''));
+            $matched = false;
+            foreach ($constraints['name_any'] as $needle) {
+                if (str_contains($foldedName, $this->foldVietnamese((string) $needle))) {
+                    $matched = true;
+                    break;
+                }
+            }
+            if (!$matched) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /** @return array<string, mixed>|null */
     private function fallbackBuildProductByCategory(
         string $categorySlug,
         float $targetPrice,
@@ -1278,6 +1495,17 @@ class ChatController
             $sql .= ' AND p.wattage >= :wattage_min';
             $params['wattage_min'] = (int) $constraints['wattage_min'];
         }
+        if (!empty($constraints['name_any']) && is_array($constraints['name_any'])) {
+            $nameConditions = [];
+            foreach (array_values($constraints['name_any']) as $index => $needle) {
+                $parameter = 'name_any_' . $index;
+                $nameConditions[] = 'LOWER(p.name) LIKE :' . $parameter;
+                $params[$parameter] = '%' . mb_strtolower((string) $needle) . '%';
+            }
+            if ($nameConditions !== []) {
+                $sql .= ' AND (' . implode(' OR ', $nameConditions) . ')';
+            }
+        }
 
         $orderBy = $preferCheapest
             ? 'p.price ASC, p.id ASC'
@@ -1288,7 +1516,7 @@ class ChatController
             LIMIT 1
         ';
 
-        if ($targetPrice > 0) {
+        if ($targetPrice > 0 && !$preferCheapest) {
             $params['target_price'] = $targetPrice;
         }
 
@@ -1532,6 +1760,73 @@ class ChatController
         }
 
         return 0.0;
+    }
+
+    private function rememberBuildPreferences(string $message): void
+    {
+        if ($this->activeChatSessionId === '') {
+            return;
+        }
+
+        $preferences = $this->buildPreferences();
+        $folded = $this->foldVietnamese($message);
+        $budget = $this->budgetFromMessage($message);
+
+        if ($budget > 0) {
+            $preferences['budget'] = $budget;
+        }
+
+        if ($this->matchesAny($folded, ['choi game', 'gaming', 'game'])) {
+            $preferences['purpose'] = 'gaming';
+        } elseif ($this->matchesAny($folded, ['tri tue nhan tao', 'may hoc', 'deep learning', 'build ai', 'pc ai'])) {
+            $preferences['purpose'] = 'ai';
+        } elseif ($this->matchesAny($folded, ['lap trinh', 'code', 'programming'])) {
+            $preferences['purpose'] = 'programming';
+        }
+
+        if ($this->matchesAny($folded, ['doi sang amd', 'cpu amd', 'ryzen', 'dung amd'])) {
+            $preferences['cpu_vendor'] = 'amd';
+        } elseif ($this->matchesAny($folded, ['doi sang intel', 'cpu intel', 'core i3', 'core i5', 'core i7', 'core i9', 'core ultra'])) {
+            $preferences['cpu_vendor'] = 'intel';
+        }
+
+        if ($this->matchesAny($folded, ['nvidia', 'geforce', 'rtx'])) {
+            $preferences['gpu_vendor'] = 'nvidia';
+        } elseif ($this->matchesAny($folded, ['radeon', 'vga amd', 'gpu amd'])) {
+            $preferences['gpu_vendor'] = 'amd';
+        }
+
+        if ($this->matchesAny($folded, ['case trang', 'vo case trang', 'white case', 'mau trang'])) {
+            $preferences['case_color'] = 'white';
+        }
+        if (str_contains($folded, 'wifi')) {
+            $preferences['wifi'] = true;
+        }
+        if ($this->matchesAny($folded, ['ssd 1tb', 'nvme 1tb', '1000gb'])) {
+            $preferences['ssd_capacity_tb'] = 1;
+        }
+        if ($this->matchesAny($folded, ['re nhat', 'gia re', 'thap nhat', 'tiet kiem', 're nhat co the'])) {
+            $preferences['prefer_cheapest'] = true;
+        }
+
+        $sessionKey = hash('sha256', $this->activeChatSessionId);
+        if (!isset($_SESSION['chat_build_preferences']) || !is_array($_SESSION['chat_build_preferences'])) {
+            $_SESSION['chat_build_preferences'] = [];
+        }
+        $_SESSION['chat_build_preferences'][$sessionKey] = $preferences;
+    }
+
+    /** @return array<string, mixed> */
+    private function buildPreferences(): array
+    {
+        if ($this->activeChatSessionId === '') {
+            return [];
+        }
+
+        $sessionKey = hash('sha256', $this->activeChatSessionId);
+        $preferences = $_SESSION['chat_build_preferences'][$sessionKey] ?? [];
+
+        return is_array($preferences) ? $preferences : [];
     }
 
     /**
