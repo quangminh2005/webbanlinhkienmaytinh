@@ -289,6 +289,24 @@ $run('21 Tổng hợp AMD, NVIDIA, WiFi, SSD 1TB', static function (ChatControll
         ?: 'Không đáp ứng đầy đủ AMD/NVIDIA/WiFi/SSD 1TB hoặc cấu hình không tương thích.';
 });
 
+$run('22 SSD NVMe 1TB la truy van san pham doc lap', static function (ChatController $controller): bool|string {
+    invokePrivate($controller, 'rememberBuildPreferences', 'Build PC gaming 25 trieu');
+
+    if (invokePrivate($controller, 'shouldUseValidatedBuildReply', 'SSD NVMe 1TB')) {
+        return 'Truy van SSD doc lap bi chuyen nham sang nhanh Build PC.';
+    }
+
+    $slugs = invokePrivate($controller, 'categorySlugsFromQuery', 'SSD NVMe 1TB');
+    return in_array('ssd', $slugs, true) ?: 'Truy van khong duoc nhan dien la danh muc SSD.';
+});
+
+$run('23 Doi SSD trong cau hinh van la tiep tuc Build PC', static function (ChatController $controller): bool|string {
+    invokePrivate($controller, 'rememberBuildPreferences', 'Build PC gaming 25 trieu');
+
+    return invokePrivate($controller, 'shouldUseValidatedBuildReply', 'doi SSD sang 1TB')
+        ?: 'Yeu cau doi SSD trong cau hinh khong duoc nhan dien la tiep tuc Build PC.';
+});
+
 $passed = count(array_filter($tests, static fn (array $test): bool => $test['passed']));
 $total = count($tests);
 $rate = $total > 0 ? ($passed / $total) * 100 : 0;
