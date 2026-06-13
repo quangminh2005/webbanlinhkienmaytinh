@@ -1113,6 +1113,15 @@ class ChatController
                 . $this->absoluteUrl('/build-pc');
         }
 
+        $total = array_sum(array_map(
+            static fn (array $product): float => (float) ($product['price'] ?? 0),
+            $items
+        ));
+        if ($budget > 0 && $total > $budget * 1.05) {
+            return 'Hiện dữ liệu sản phẩm còn hàng của shop không có cấu hình PC hoàn chỉnh phù hợp ngân sách khoảng '
+                . number_format($budget) . ' VND. Mình không tự dựng cấu hình vượt ngân sách.';
+        }
+
         foreach ($items as $product) {
             $this->rememberBuildProduct($product);
         }
@@ -1125,7 +1134,6 @@ class ChatController
             : 'Mình gợi ý cấu hình PC từ sản phẩm còn hàng trong shop:';
         $lines[] = '';
 
-        $total = 0.0;
         $missing = [];
         foreach ($required as $slug) {
             $product = $items[$slug] ?? null;
@@ -1134,7 +1142,6 @@ class ChatController
                 continue;
             }
 
-            $total += (float) $product['price'];
             $lines[] = '- ' . ($labels[$slug] ?? strtoupper($slug)) . ': ' . $product['name']
                 . ' | Giá: ' . $product['price_text']
                 . ' | Tồn kho: ' . (int) $product['stock_quantity']

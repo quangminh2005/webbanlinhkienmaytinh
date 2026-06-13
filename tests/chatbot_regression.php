@@ -338,6 +338,17 @@ $run('26 Du muc dich va ngan sach moi dung cau hinh', static function (ChatContr
         ?: 'Khong dung cau hinh sau khi da du muc dich va ngan sach.';
 });
 
+$run('27 Khong dung cau hinh neu du lieu vuot xa ngan sach', static function (ChatController $controller): bool|string {
+    invokePrivate($controller, 'rememberBuildPreferences', 'Build PC gaming 5 trieu');
+    $reply = invokePrivate($controller, 'fallbackBuildReply', 'Build PC gaming 5 trieu');
+    $foldedReply = invokePrivate($controller, 'foldVietnamese', $reply);
+
+    return str_contains($foldedReply, 'khong co cau hinh pc hoan chinh phu hop ngan sach')
+        && str_contains($foldedReply, 'khong tu dung cau hinh vuot ngan sach')
+        && !str_contains($foldedReply, '- cpu:')
+        ?: 'Van liet ke cau hinh khi du lieu shop khong dap ung ngan sach.';
+});
+
 $passed = count(array_filter($tests, static fn (array $test): bool => $test['passed']));
 $total = count($tests);
 $rate = $total > 0 ? ($passed / $total) * 100 : 0;
