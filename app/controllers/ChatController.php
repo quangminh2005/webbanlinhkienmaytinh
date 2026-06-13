@@ -107,6 +107,10 @@ class ChatController
 
             $reply = $this->callN8n($webhookUrl, $n8nMessage, $context, (int) ($config['timeout_seconds'] ?? 25));
             if ($reply !== null) {
+                $violation = $this->n8nReplyViolation($message, $reply);
+                if ($violation !== null) {
+                    $reply = $this->fallbackForRejectedN8nReply($message, $violation);
+                }
                 if ($this->isMainboardCompatibilityQuery($message)) {
                     $validatedReply = $this->validatedMainboardsForCpuReply($message . "\n" . $reply);
                     if ($validatedReply !== null) {
@@ -553,9 +557,43 @@ class ChatController
             return [];
         }
 
+        $folded = $this->foldVietnamese($query);
+        $priceLimit = $this->budgetFromMessage($query);
+        $hasStrictPriceLimit = $priceLimit > 0 && $this->matchesAny($folded, [
+            'duoi ',
+            'khong qua',
+            'toi da',
+        ]);
+        $requiresStock = $this->matchesAny($folded, ['con hang', 'dang co hang', 'ton kho']);
+
         $groups = [];
         foreach ($slugs as $slug) {
-            $groups[$slug] = $this->productsByCategoryForAi($slug, 8);
+            $products = $this->productsByCategoryForAi($slug, 0);
+            $products = array_values(array_filter($products, static function (array $product) use ($hasStrictPriceLimit, $priceLimit, $requiresStock): bool {
+                if ($hasStrictPriceLimit && (float) ($product['price'] ?? 0) > $priceLimit) {
+                    return false;
+                }
+                if ($requiresStock && (int) ($product['stock_quantity'] ?? 0) <= 0) {
+                    return false;
+                }
+
+                return true;
+            }));
+            usort($products, function (array $left, array $right) use ($folded): int {
+                $leftScore = $this->productMentionScore((string) ($left['name'] ?? ''), $folded);
+                $rightScore = $this->productMentionScore((string) ($right['name'] ?? ''), $folded);
+                if ($leftScore !== $rightScore) {
+                    return $rightScore <=> $leftScore;
+                }
+
+                $stockComparison = (int) ($right['stock_quantity'] ?? 0) <=> (int) ($left['stock_quantity'] ?? 0);
+                if ($stockComparison !== 0) {
+                    return $stockComparison;
+                }
+
+                return (float) ($left['price'] ?? 0) <=> (float) ($right['price'] ?? 0);
+            });
+            $groups[$slug] = array_slice($products, 0, 8);
         }
 
         return $groups;
@@ -799,8 +837,8 @@ class ChatController
         $lower = mb_strtolower($query, 'UTF-8');
 
         $keywords = [
-            'cpu' => ['cpu', 'processor', 'vi xu ly', 'vi xử lý', 'bo xu ly', 'bộ xử lý', 'chip'],
-            'vga' => ['vga', 'gpu', 'card man hinh', 'card màn hình', 'card do hoa', 'card đồ họa', 'card roi', 'card rời'],
+            'cpu' => ['cpu', 'processor', 'vi xu ly', 'vi xử lý', 'bo xu ly', 'bộ xử lý', 'chip', 'ryzen', 'core i3', 'core i5', 'core i7', 'core i9'],
+            'vga' => ['vga', 'gpu', 'card man hinh', 'card màn hình', 'card do hoa', 'card đồ họa', 'card roi', 'card rời', 'rtx', 'geforce', 'radeon'],
             'ram' => ['ram', 'bo nho', 'bộ nhớ', 'memory'],
             'mainboard' => ['mainboard', 'main board', 'main', 'bo mach chu', 'bo mạch chủ', 'motherboard'],
             'psu' => ['psu', 'nguon', 'nguồn', 'nguon may tinh', 'nguồn máy tính', 'power supply'],
@@ -1732,6 +1770,74 @@ class ChatController
 
         unset($_SESSION['chat_product_context'][$sessionKey][$categorySlug]);
         return null;
+    }
+
+    private function n8nReplyViolation(string $message, string $reply): ?string
+    {
+        if (preg_match('~/product\?id=(?:\?+|0)(?:\D|$)~i', $reply) === 1) {
+            return 'invalid_product_link';
+        }
+
+        $budget = $this->budgetFromMessage($message);
+        $foldedMessage = $this->foldVietnamese($message);
+        $hasStrictPriceCeiling = $budget > 0 && $this->matchesAny($foldedMessage, [
+            'duoi ',
+            'khong qua',
+            'toi da',
+        ]);
+        $hasFlexibleBudget = $budget > 0 && $this->matchesAny($foldedMessage, [
+            'tam ',
+            'ngan sach',
+        ]);
+        if ($hasStrictPriceCeiling || $hasFlexibleBudget) {
+            $maximum = $hasStrictPriceCeiling ? $budget : $budget * 1.05;
+            foreach ($this->moneyValuesFromText($reply) as $value) {
+                if ($value > $maximum) {
+                    return 'price_limit_exceeded';
+                }
+            }
+        }
+
+        $foldedReply = $this->foldVietnamese($reply);
+        $looksLikeBuild = $this->matchesAny($foldedReply, ['cpu:', 'cpu |', '1. cpu'])
+            && $this->matchesAny($foldedReply, ['mainboard:', 'mainboard |', '2. mainboard'])
+            && $this->matchesAny($foldedReply, ['tong tam tinh', 'tong gia']);
+        if ($looksLikeBuild) {
+            return 'unvalidated_build_reply';
+        }
+
+        return null;
+    }
+
+    /** @return list<float> */
+    private function moneyValuesFromText(string $text): array
+    {
+        $values = [];
+        if (preg_match_all('/(\d+(?:[.,]\d+)?)\s*(trieu|tr)\b/iu', $text, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $values[] = (float) str_replace(',', '.', $match[1]) * 1000000;
+            }
+        }
+        if (preg_match_all('/(\d[\d.,]{4,})\s*(?:vnd|dong|d)\b/iu', $text, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $values[] = (float) preg_replace('/[^\d]/', '', $match[1]);
+            }
+        }
+
+        return $values;
+    }
+
+    private function fallbackForRejectedN8nReply(string $message, string $violation): string
+    {
+        if ($violation === 'unvalidated_build_reply' || $this->shouldUseValidatedBuildReply($message)) {
+            return $this->fallbackBuildReply($message);
+        }
+
+        if ($this->categorySlugsFromQuery($message) !== []) {
+            return $this->fallbackCategoryReply($message);
+        }
+
+        return 'Mình chưa thể xác minh câu trả lời từ dữ liệu shop nên không đưa ra giá, tồn kho hoặc link chưa được kiểm chứng. Anh/chị vui lòng cho biết rõ danh mục sản phẩm cần tìm.';
     }
 
     private function productMentionScore(string $productName, string $foldedMessage): int

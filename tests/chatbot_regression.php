@@ -333,9 +333,14 @@ $run('26 Du muc dich va ngan sach moi dung cau hinh', static function (ChatContr
     invokePrivate($controller, 'rememberBuildPreferences', '20 trieu');
     $reply = invokePrivate($controller, 'fallbackBuildReply', '20 trieu');
 
+    $foldedReply = invokePrivate($controller, 'foldVietnamese', $reply);
+
     return invokePrivate($controller, 'shouldUseValidatedBuildReply', '20 trieu')
-        && str_contains(invokePrivate($controller, 'foldVietnamese', $reply), 'goi y cau hinh pc')
-        ?: 'Khong dung cau hinh sau khi da du muc dich va ngan sach.';
+        && (
+            str_contains($foldedReply, 'goi y cau hinh pc')
+            || str_contains($foldedReply, 'khong co cau hinh pc hoan chinh phu hop ngan sach')
+        )
+        ?: 'Khong xu ly build an toan sau khi da du muc dich va ngan sach.';
 });
 
 $run('27 Khong dung cau hinh neu du lieu vuot xa ngan sach', static function (ChatController $controller): bool|string {
@@ -347,6 +352,60 @@ $run('27 Khong dung cau hinh neu du lieu vuot xa ngan sach', static function (Ch
         && str_contains($foldedReply, 'khong tu dung cau hinh vuot ngan sach')
         && !str_contains($foldedReply, '- cpu:')
         ?: 'Van liet ke cau hinh khi du lieu shop khong dap ung ngan sach.';
+});
+
+$run('28 Chan link san pham placeholder tu n8n', static function (ChatController $controller): bool|string {
+    $reply = 'Mainboard ASUS B760M | Link: http://localhost/product?id=???';
+    $violation = invokePrivate($controller, 'n8nReplyViolation', 'Main B760M nao phu hop?', $reply);
+
+    return $violation === 'invalid_product_link'
+        ?: 'Khong chan link san pham placeholder.';
+});
+
+$run('29 Chan san pham vuot tran gia nguoi dung', static function (ChatController $controller): bool|string {
+    $reply = 'Card tot nhat la RTX 4060 Ti, gia 10,100,000 VND. Link: http://localhost/product?id=11';
+    $violation = invokePrivate($controller, 'n8nReplyViolation', 'Card nao choi game tot nhat duoi 10 trieu?', $reply);
+
+    return $violation === 'price_limit_exceeded'
+        ?: 'Khong chan goi y san pham vuot tran gia.';
+});
+
+$run('30 Chan n8n tu dung cau hinh build', static function (ChatController $controller): bool|string {
+    $reply = "1. CPU: Intel Core i5\n2. Mainboard: ASUS B760M\nTong tam tinh: 25,000,000 VND";
+    $violation = invokePrivate($controller, 'n8nReplyViolation', 'Tu van may tinh choi game', $reply);
+
+    return $violation === 'unvalidated_build_reply'
+        ?: 'Khong chan cau hinh do n8n tu lap.';
+});
+
+$run('31 Khong chan phan hoi san pham hop le', static function (ChatController $controller): bool|string {
+    $reply = 'Nguon Cooler Master MWE 650 Bronze V2 gia 1,790,000 VND, con 28. Link: http://localhost/product?id=15';
+    $violation = invokePrivate($controller, 'n8nReplyViolation', 'Nguon 650W Bronze co mau nao khong?', $reply);
+
+    return $violation === null
+        ?: 'Da chan nham phan hoi san pham hop le: ' . (string) $violation;
+});
+
+$run('32 Fallback danh muc ton trong tran gia', static function (ChatController $controller): bool|string {
+    $groups = invokePrivate($controller, 'requestedCategoryProductsForAi', 'VGA con hang duoi 10 trieu');
+    foreach ($groups['vga'] ?? [] as $product) {
+        if ((float) ($product['price'] ?? 0) > 10000000) {
+            return 'Fallback van tra san pham vuot 10 trieu: ' . (string) ($product['name'] ?? 'unknown');
+        }
+        if ((int) ($product['stock_quantity'] ?? 0) <= 0) {
+            return 'Fallback van tra san pham het hang: ' . (string) ($product['name'] ?? 'unknown');
+        }
+    }
+
+    return true;
+});
+
+$run('33 Fallback uu tien san pham khop ten truy van', static function (ChatController $controller): bool|string {
+    $groups = invokePrivate($controller, 'requestedCategoryProductsForAi', 'Cho toi thong tin RTX 4060');
+    $first = $groups['vga'][0] ?? null;
+
+    return is_array($first) && str_contains(strtoupper((string) ($first['name'] ?? '')), '4060')
+        ?: 'Fallback khong uu tien VGA RTX 4060 phu hop truy van; dau tien: ' . (string) ($first['name'] ?? 'none');
 });
 
 $passed = count(array_filter($tests, static fn (array $test): bool => $test['passed']));
