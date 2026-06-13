@@ -307,6 +307,37 @@ $run('23 Doi SSD trong cau hinh van la tiep tuc Build PC', static function (Chat
         ?: 'Yeu cau doi SSD trong cau hinh khong duoc nhan dien la tiep tuc Build PC.';
 });
 
+$run('24 Build PC hoi muc dich truoc ngan sach', static function (ChatController $controller): bool|string {
+    invokePrivate($controller, 'rememberBuildPreferences', 'Build PC');
+    $reply = invokePrivate($controller, 'fallbackBuildReply', 'Build PC');
+
+    return str_contains(invokePrivate($controller, 'foldVietnamese', $reply), 'muc dich')
+        && !str_contains(invokePrivate($controller, 'foldVietnamese', $reply), 'goi y cau hinh')
+        ?: 'Khong hoi muc dich truoc khi dung cau hinh.';
+});
+
+$run('25 Co muc dich thi hoi ngan sach', static function (ChatController $controller): bool|string {
+    invokePrivate($controller, 'rememberBuildPreferences', 'Build PC');
+    invokePrivate($controller, 'rememberBuildPreferences', 'choi game');
+    $reply = invokePrivate($controller, 'fallbackBuildReply', 'choi game');
+
+    return invokePrivate($controller, 'shouldUseValidatedBuildReply', 'choi game')
+        && str_contains(invokePrivate($controller, 'foldVietnamese', $reply), 'ngan sach')
+        && !str_contains(invokePrivate($controller, 'foldVietnamese', $reply), 'goi y cau hinh')
+        ?: 'Khong hoi ngan sach sau khi da co muc dich.';
+});
+
+$run('26 Du muc dich va ngan sach moi dung cau hinh', static function (ChatController $controller): bool|string {
+    invokePrivate($controller, 'rememberBuildPreferences', 'Build PC');
+    invokePrivate($controller, 'rememberBuildPreferences', 'choi game');
+    invokePrivate($controller, 'rememberBuildPreferences', '20 trieu');
+    $reply = invokePrivate($controller, 'fallbackBuildReply', '20 trieu');
+
+    return invokePrivate($controller, 'shouldUseValidatedBuildReply', '20 trieu')
+        && str_contains(invokePrivate($controller, 'foldVietnamese', $reply), 'goi y cau hinh pc')
+        ?: 'Khong dung cau hinh sau khi da du muc dich va ngan sach.';
+});
+
 $passed = count(array_filter($tests, static fn (array $test): bool => $test['passed']));
 $total = count($tests);
 $rate = $total > 0 ? ($passed / $total) * 100 : 0;

@@ -638,12 +638,23 @@ class ChatController
     private function shouldUseValidatedBuildReply(string $query): bool
     {
         $folded = $this->foldVietnamese($query);
+        $preferences = $this->buildPreferences();
 
         return str_contains($folded, 'build')
             || str_contains($folded, 'cau hinh pc')
             || str_contains($folded, 'lap pc')
             || str_contains($folded, 'rap pc')
-            || ($this->buildPreferences() !== [] && $this->matchesAny($folded, [
+            || (!empty($preferences['build_flow']) && (
+                $this->budgetFromMessage($query) > 0
+                || $folded === 'ai'
+                || $this->matchesAny($folded, [
+                    'choi game', 'gaming', 'game',
+                    'tri tue nhan tao', 'may hoc', 'deep learning',
+                    'lap trinh', 'code', 'programming',
+                    'hoc tap', 'van phong', 'render', 'do hoa', 'thiet ke',
+                ])
+            ))
+            || ($preferences !== [] && $this->matchesAny($folded, [
                 'doi sang amd',
                 'doi sang intel',
                 'dung amd',
@@ -1083,9 +1094,17 @@ class ChatController
 
     private function fallbackBuildReply(string $message): string
     {
+        $preferences = $this->buildPreferences();
+        if (empty($preferences['purpose'])) {
+            return 'Anh/chị dự định dùng PC cho mục đích gì (chơi game, học tập, văn phòng, lập trình, render hay AI)?';
+        }
+        if (empty($preferences['budget'])) {
+            return 'Ngân sách dự kiến để build PC là bao nhiêu?';
+        }
+
         $budget = $this->budgetFromMessage($message);
         if ($budget <= 0) {
-            $budget = (float) ($this->buildPreferences()['budget'] ?? 0);
+            $budget = (float) $preferences['budget'];
         }
         $items = $this->fallbackBuildItems($budget, $message);
         $compatibilityErrors = $this->validateBuildCompatibility($items, true);
@@ -1774,16 +1793,22 @@ class ChatController
         $folded = $this->foldVietnamese($message);
         $budget = $this->budgetFromMessage($message);
 
+        if (str_contains($folded, 'build') || $this->matchesAny($folded, ['cau hinh pc', 'lap pc', 'rap pc'])) {
+            $preferences['build_flow'] = true;
+        }
+
         if ($budget > 0) {
             $preferences['budget'] = $budget;
         }
 
         if ($this->matchesAny($folded, ['choi game', 'gaming', 'game'])) {
             $preferences['purpose'] = 'gaming';
-        } elseif ($this->matchesAny($folded, ['tri tue nhan tao', 'may hoc', 'deep learning', 'build ai', 'pc ai'])) {
+        } elseif ($folded === 'ai' || $this->matchesAny($folded, ['tri tue nhan tao', 'may hoc', 'deep learning', 'build ai', 'pc ai'])) {
             $preferences['purpose'] = 'ai';
         } elseif ($this->matchesAny($folded, ['lap trinh', 'code', 'programming'])) {
             $preferences['purpose'] = 'programming';
+        } elseif ($this->matchesAny($folded, ['hoc tap', 'van phong', 'render', 'do hoa', 'thiet ke'])) {
+            $preferences['purpose'] = 'general';
         }
 
         if ($this->matchesAny($folded, ['doi sang amd', 'cpu amd', 'ryzen', 'dung amd'])) {
